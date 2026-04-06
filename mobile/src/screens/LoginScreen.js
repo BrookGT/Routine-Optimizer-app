@@ -138,7 +138,7 @@ function GoogleAuthBlock({
             disabled={disabled || !request}
             palette={palette}
             gradients={gradients}
-            styleSheet={styles}
+            styleSheet={styleSheet}
             onPress={() => {
                 promptAsync().catch((error) => {
                     Alert.alert(
@@ -155,8 +155,11 @@ function GoogleAuthBlock({
 }
 
 export default function LoginScreen() {
-    const { palette, gradients } = useAppTheme();
-    const styles = useMemo(() => createStyles(palette), [palette]);
+    const { palette, gradients, isDark } = useAppTheme();
+    const styles = useMemo(
+        () => createStyles(palette, isDark),
+        [palette, isDark],
+    );
 
     const {
         signInWithEmail,
@@ -289,7 +292,11 @@ export default function LoginScreen() {
                             }}
                         >
                             <LinearGradient
-                                colors={["#FFFFFF", "#EAF7FF", "#DFF7EA"]}
+                                colors={
+                                    isDark
+                                        ? ["#132741", "#0E1D32", "#143047"]
+                                        : ["#FFFFFF", "#EAF7FF", "#DFF7EA"]
+                                }
                                 style={styles.visualCard}
                             >
                                 <Image
@@ -431,7 +438,7 @@ export default function LoginScreen() {
     );
 }
 
-function createStyles(palette) {
+function createStyles(palette, isDark) {
     return StyleSheet.create({
         flex: {
             flex: 1,
@@ -516,7 +523,7 @@ function createStyles(palette) {
             borderRadius: 16,
             borderWidth: 1,
             borderColor: palette.borderStrong,
-            backgroundColor: "rgba(255,255,255,0.72)",
+            backgroundColor: palette.surfaceStrong,
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "center",
@@ -553,11 +560,13 @@ function createStyles(palette) {
             fontWeight: "700",
         },
         primaryButtonText: {
-            color: "#063C75",
+            color: isDark ? palette.iceWhite : "#063C75",
             textTransform: "uppercase",
             letterSpacing: 0.5,
             fontSize: 14,
-            textShadowColor: "rgba(255,255,255,0.28)",
+            textShadowColor: isDark
+                ? "rgba(6,14,28,0.48)"
+                : "rgba(255,255,255,0.28)",
             textShadowOffset: { width: 0, height: 1 },
             textShadowRadius: 1,
         },
@@ -596,7 +605,7 @@ function createStyles(palette) {
             borderRadius: 12,
             borderWidth: 1,
             borderColor: palette.borderStrong,
-            backgroundColor: "rgba(255,255,255,0.78)",
+            backgroundColor: palette.surfaceStrong,
             color: palette.textPrimary,
             paddingHorizontal: 12,
             fontSize: 15,

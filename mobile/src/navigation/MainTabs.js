@@ -110,7 +110,7 @@ function FancyTabBar({ state, descriptors, navigation }) {
 
                         const iconLift = animIndex.interpolate({
                             inputRange: [index - 1, index, index + 1],
-                            outputRange: [0, -8, 0],
+                            outputRange: [0, -4, 0],
                             extrapolate: "clamp",
                         });
 

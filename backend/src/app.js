@@ -46,12 +46,13 @@ app.use(express.urlencoded({ extended: true, limit: "50kb" }));
 
 // CORS — origins are controlled via the ALLOWED_ORIGINS environment variable
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
+  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
   : [];
 
 app.use(
   cors({
     origin: (origin, callback) => {
+      if (allowedOrigins.length === 0) return callback(null, true);
       // Allow requests with no origin (e.g. mobile apps, curl, Postman)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);

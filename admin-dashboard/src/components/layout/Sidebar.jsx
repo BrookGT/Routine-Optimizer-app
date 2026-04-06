@@ -1,4 +1,4 @@
-import { BarChart3, FlaskConical, MessageSquareText, ServerCog, Sparkles, Users } from "lucide-react";
+import { BarChart3, FlaskConical, MessageSquareText, ServerCog, Sparkles, Users, X } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "@/utils/cn";
 
@@ -11,12 +11,24 @@ const navItems = [
   { to: "/experiments", label: "Experiments", icon: FlaskConical },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ onNavigate, showClose = false }) {
   return (
-    <aside className="flex h-full w-72 flex-col border-r border-slate-200 bg-white p-4">
-      <div className="mb-6 rounded-xl bg-slate-900 px-4 py-3 text-white">
-        <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Wuloye</p>
-        <h1 className="text-xl font-bold">Admin Console</h1>
+    <aside className="flex h-full w-64 flex-col border-r border-slate-200 bg-white px-4 py-6">
+      <div className="mb-6 flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Wuloye</p>
+          <h1 className="text-lg font-semibold text-slate-900">Admin Console</h1>
+        </div>
+        {showClose && (
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100"
+            onClick={onNavigate}
+            aria-label="Close sidebar"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       <nav className="space-y-1">
@@ -29,9 +41,12 @@ export default function Sidebar() {
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  isActive ? "bg-sky-100 text-sky-900" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  isActive
+                    ? "bg-slate-100 text-slate-900"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                 )
               }
+              onClick={onNavigate}
             >
               <Icon className="h-4 w-4" />
               {item.label}

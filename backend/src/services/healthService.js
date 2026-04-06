@@ -11,8 +11,6 @@
  * exist — the round-trip itself confirms connectivity).
  */
 
-import { db } from "../config/firebase.js";
-
 /**
  * @returns {Promise<{
  *   status: "ok"|"degraded",
@@ -24,8 +22,11 @@ import { db } from "../config/firebase.js";
 export const getHealthStatus = async () => {
   let firestoreOk = false;
   try {
-    await db.collection("_health").limit(1).get();
-    firestoreOk = true;
+    const { db } = await import("../config/firebase.js");
+    if (db) {
+      await db.collection("_health").limit(1).get();
+      firestoreOk = true;
+    }
   } catch {
     /* non-fatal — we report degraded status instead of throwing */
   }
