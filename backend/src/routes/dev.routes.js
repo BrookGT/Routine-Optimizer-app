@@ -16,6 +16,8 @@ import {
   seedPlacesHandler,
   listPlacesHandler,
   experimentMetricsHandler,
+  userLookupHandler,
+  interactionsLookupHandler,
 } from "../controllers/dev.controller.js";
 
 const router = Router();
@@ -41,5 +43,11 @@ router.get("/places", listPlacesHandler);
 
 // GET  /api/dev/experiment-metrics
 router.get("/experiment-metrics", experimentMetricsHandler);
+
+// GET /api/dev/user?uid=... or ?email=...
+router.get("/user", userLookupHandler);
+
+// GET /api/dev/interactions?uid=... or ?email=...&limit=50
+router.get("/interactions", interactionsLookupHandler);
 
 export default router;

@@ -90,6 +90,24 @@ export const getUserById = async (uid) => {
 };
 
 /**
+ * Retrieves a user document by email address.
+ *
+ * @param {string} email
+ * @returns {Promise<object|null>}
+ */
+export const getUserByEmail = async (email) => {
+  if (!email) return null;
+  const snapshot = await db
+    .collection(USERS_COLLECTION)
+    .where("email", "==", email)
+    .limit(1)
+    .get();
+
+  if (snapshot.empty) return null;
+  return snapshot.docs[0].data();
+};
+
+/**
  * Updates mutable profile fields for an existing user.
  *
  * Only the keys present in `updates` are written — Firestore's update()
