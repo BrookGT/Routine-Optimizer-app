@@ -5,6 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import PlaceCard from "../components/PlaceCard";
 import EmptyState from "../components/EmptyState";
 import Loader from "../components/Loader";
+import TopGreetingBanner from "../components/TopGreetingBanner";
 import { createInteraction, getInteractions } from "../api/interactionApi";
 import { INTERACTION_TYPES } from "../utils/constants";
 import { getApiErrorMessage, unwrapApiData } from "../utils/api";
@@ -108,7 +109,12 @@ export default function SavedScreen({ navigation }) {
                 colors={gradients.appBackground}
                 style={styles.screen}
             >
-                <Text style={styles.title}>Saved Places</Text>
+                <TopGreetingBanner
+                    eyebrow="Your collection"
+                    title="Saved Places"
+                    subtitle="All your favorites in one place, ready whenever you are"
+                    onAction={handleRefresh}
+                />
                 {loading ? <Loader /> : null}
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -147,12 +153,6 @@ function createStyles(palette) {
     return StyleSheet.create({
         safeArea: { flex: 1, backgroundColor: palette.pageTop },
         screen: { flex: 1, paddingHorizontal: 16 },
-        title: {
-            color: palette.textPrimary,
-            fontSize: 31,
-            fontWeight: "800",
-            marginTop: 4,
-        },
         errorText: {
             color: palette.danger,
             marginTop: 8,

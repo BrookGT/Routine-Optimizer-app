@@ -69,7 +69,10 @@ function FancyTabBar({ state, descriptors, navigation }) {
 
     return (
         <View style={styles.hostWrap}>
-            <View
+            <LinearGradient
+                colors={gradients.navBar}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
                 style={styles.tabBarWrap}
                 onLayout={(event) => {
                     setBarWidth(event.nativeEvent.layout.width);
@@ -110,7 +113,7 @@ function FancyTabBar({ state, descriptors, navigation }) {
 
                         const iconLift = animIndex.interpolate({
                             inputRange: [index - 1, index, index + 1],
-                            outputRange: [0, -4, 0],
+                            outputRange: [0, -2, 0],
                             extrapolate: "clamp",
                         });
 
@@ -153,7 +156,7 @@ function FancyTabBar({ state, descriptors, navigation }) {
                                             route.name,
                                             isDark
                                                 ? palette.textSecondary
-                                                : "#98A0AD",
+                                                : palette.textMuted,
                                             20,
                                         )}
                                     </View>
@@ -171,7 +174,7 @@ function FancyTabBar({ state, descriptors, navigation }) {
                     ]}
                 >
                     <LinearGradient
-                        colors={gradients.primaryButtonMint}
+                        colors={gradients.navActivePill}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={styles.activeBubble}
@@ -179,7 +182,7 @@ function FancyTabBar({ state, descriptors, navigation }) {
                         {renderTabIcon(activeIcon, palette.iceWhite, 22)}
                     </LinearGradient>
                 </Animated.View>
-            </View>
+            </LinearGradient>
         </View>
     );
 }
@@ -208,30 +211,34 @@ function createStyles(palette, isDark) {
             position: "absolute",
             left: 0,
             right: 0,
-            bottom: 8,
+            bottom: 12,
+            height: 94,
             paddingHorizontal: 18,
+            overflow: "visible",
+            zIndex: 30,
         },
         tabBarWrap: {
             height: 72,
             borderRadius: 22,
-            backgroundColor: isDark ? "#0A0E16" : "#080C12",
             overflow: "visible",
+            marginTop: 22,
             shadowColor: "#000000",
             shadowOffset: { width: 0, height: 10 },
-            shadowOpacity: isDark ? 0.45 : 0.28,
+            shadowOpacity: isDark ? 0.52 : 0.22,
             shadowRadius: 14,
             elevation: 12,
             borderWidth: 1,
             borderColor: isDark
-                ? "rgba(116, 176, 255, 0.24)"
-                : "rgba(255,255,255,0.08)",
+                ? "rgba(129, 201, 255, 0.42)"
+                : "rgba(10, 106, 168, 0.14)",
         },
         tabRow: {
             flex: 1,
             flexDirection: "row",
             alignItems: "center",
             paddingHorizontal: 4,
-            paddingTop: 10,
+            paddingTop: 0,
+            paddingBottom: 0,
         },
         tabButton: {
             flex: 1,
@@ -247,22 +254,22 @@ function createStyles(palette, isDark) {
             justifyContent: "center",
             borderWidth: 1,
             borderColor: isDark
-                ? "rgba(130, 182, 255, 0.28)"
-                : "rgba(255,255,255,0.1)",
+                ? "rgba(141, 208, 255, 0.34)"
+                : "rgba(10, 106, 168, 0.22)",
             backgroundColor: isDark
-                ? "rgba(21,37,62,0.72)"
-                : "rgba(255,255,255,0.06)",
+                ? "rgba(18, 41, 68, 0.78)"
+                : "rgba(248, 254, 255, 0.56)",
         },
         notch: {
             position: "absolute",
-            top: -24,
+            top: -8,
             width: 46,
             height: 46,
             borderRadius: 23,
         },
         activeBubbleWrap: {
             position: "absolute",
-            top: -30,
+            top: 0,
             width: 54,
             height: 54,
         },
@@ -273,10 +280,10 @@ function createStyles(palette, isDark) {
             alignItems: "center",
             justifyContent: "center",
             borderWidth: 3,
-            borderColor: isDark ? "#0A0E16" : "#080C12",
-            shadowColor: "#2BAFFF",
+            borderColor: isDark ? palette.pageMid : palette.pageTop,
+            shadowColor: isDark ? "#62D1FF" : "#2BAFFF",
             shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.35,
+            shadowOpacity: isDark ? 0.5 : 0.34,
             shadowRadius: 12,
             elevation: 12,
         },

@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+    Animated,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import Loader from "../components/Loader";
+import TopGreetingBanner from "../components/TopGreetingBanner";
 import { getProfile } from "../api/profileApi";
 import { getApiErrorMessage, unwrapApiData } from "../utils/api";
 import { THEMES } from "../theme/theme";
@@ -18,9 +26,31 @@ function formatLabel(value) {
     return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function getTimeGreeting(date, displayName) {
+    const hour = date.getHours();
+    const name = displayName?.trim() || "Wuloye User";
+
+    if (hour >= 5 && hour < 12) {
+        return `Good morning, ${name}`;
+    }
+
+    if (hour >= 12 && hour < 17) {
+        return `Good afternoon, ${name}`;
+    }
+
+    if (hour >= 17 && hour < 22) {
+        return `Good evening, ${name}`;
+    }
+
+    return `Good night, ${name}`;
+}
+
 export default function ProfileScreen({ navigation }) {
-    const { palette, gradients, mode, setThemeMode } = useAppTheme();
-    const styles = useMemo(() => createStyles(palette), [palette]);
+    const { palette, gradients, mode, isDark, setThemeMode } = useAppTheme();
+    const styles = useMemo(
+        () => createStyles(palette, isDark),
+        [palette, isDark],
+    );
     const thumbAnim = useRef(
         new Animated.Value(mode === THEMES.DARK ? 1 : 0),
     ).current;
@@ -37,6 +67,7 @@ export default function ProfileScreen({ navigation }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [profile, setProfile] = useState(null);
+    const [now, setNow] = useState(() => new Date());
 
     useEffect(() => {
         let mounted = true;
@@ -70,6 +101,14 @@ export default function ProfileScreen({ navigation }) {
         };
     }, []);
 
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setNow(new Date());
+        }, 60000);
+
+        return () => clearInterval(timer);
+    }, []);
+
     async function handleRefreshProfile() {
         try {
             setLoading(true);
@@ -89,6 +128,10 @@ export default function ProfileScreen({ navigation }) {
         : [];
     const displayName =
         profile?.name?.trim() || profile?.email || "Wuloye User";
+    const timeGreeting = useMemo(
+        () => getTimeGreeting(now, displayName),
+        [now, displayName],
+    );
     const budget = formatLabel(profile?.budgetRange);
     const location = formatLabel(profile?.locationPreference);
 
@@ -98,172 +141,173 @@ export default function ProfileScreen({ navigation }) {
                 colors={gradients.appBackground}
                 style={styles.screen}
             >
-                <View style={styles.headerRow}>
-                    <Text style={styles.greeting}>
-                        Good morning, {displayName}
-                    </Text>
-                    <Pressable
-                        style={styles.bellWrap}
-                        onPress={handleRefreshProfile}
-                    >
-                        <Ionicons
-                            name="notifications-outline"
-                            size={18}
-                            color={palette.deepBlue}
-                        />
-                    </Pressable>
-                </View>
+                <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.scrollContent}
+                >
+                    <TopGreetingBanner
+                        eyebrow="Your account"
+                        title={timeGreeting}
+                        subtitle="Manage your profile, interests, and theme preferences"
+                        onAction={handleRefreshProfile}
+                    />
 
-                <View style={styles.profileCard}>
-                    <View style={styles.avatar}>
-                        <Ionicons
-                            name="person"
-                            size={36}
-                            color={palette.iceWhite}
-                        />
-                    </View>
-                    <Text style={styles.name}>{displayName}</Text>
-                    <Text style={styles.meta}>
-                        {profile?.email ?? "No email on profile"}
-                    </Text>
-                    {loading ? <Loader /> : null}
-                    {error ? (
-                        <Text style={styles.errorText}>{error}</Text>
-                    ) : null}
-
-                    <View style={styles.sectionBlock}>
-                        <Text style={styles.label}>Interests</Text>
-                        <View style={styles.tagRow}>
-                            {interests.length > 0 ? (
-                                interests.map((interest) => (
-                                    <Text style={styles.tag} key={interest}>
-                                        {formatLabel(interest)}
-                                    </Text>
-                                ))
-                            ) : (
-                                <Text style={styles.valueMuted}>
-                                    No interests selected.
-                                </Text>
-                            )}
-                        </View>
-                    </View>
-
-                    <View style={styles.sectionBlock}>
-                        <Text style={styles.label}>Budget</Text>
-                        <Text style={styles.value}>{budget}</Text>
-                    </View>
-
-                    <View style={styles.sectionBlock}>
-                        <Text style={styles.label}>Location</Text>
-                        <Text style={styles.value}>{location}</Text>
-                    </View>
-
-                    <View style={styles.sectionBlock}>
-                        <Text style={styles.label}>Theme</Text>
-                        <View style={styles.themeRow}>
-                            <Text style={styles.valueMuted}>Light</Text>
-                            <Pressable
-                                style={styles.themeTrack}
-                                onPress={() =>
-                                    setThemeMode(
-                                        mode === THEMES.DARK
-                                            ? THEMES.LIGHT
-                                            : THEMES.DARK,
-                                    )
-                                }
-                            >
-                                <Animated.View
-                                    style={[
-                                        styles.themeThumb,
-                                        {
-                                            transform: [
-                                                {
-                                                    translateX:
-                                                        thumbAnim.interpolate({
-                                                            inputRange: [0, 1],
-                                                            outputRange: [
-                                                                2, 26,
-                                                            ],
-                                                        }),
-                                                },
-                                            ],
-                                        },
-                                    ]}
-                                >
-                                    <Ionicons
-                                        name={
-                                            mode === THEMES.DARK
-                                                ? "moon"
-                                                : "sunny"
-                                        }
-                                        size={13}
-                                        color={palette.deepBlue}
-                                    />
-                                </Animated.View>
-                            </Pressable>
-                            <Text style={styles.valueMuted}>Dark</Text>
-                        </View>
-                    </View>
-
-                    <Pressable
-                        style={styles.primaryBtnWrap}
-                        onPress={() => navigation.navigate("ProfileSetup")}
-                    >
-                        <LinearGradient
-                            colors={gradients.primaryButton}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.primaryBtn}
+                    <View style={styles.topActionsBar}>
+                        <Pressable
+                            style={styles.themeTrackTop}
+                            onPress={() =>
+                                setThemeMode(
+                                    mode === THEMES.DARK
+                                        ? THEMES.LIGHT
+                                        : THEMES.DARK,
+                                )
+                            }
                         >
-                            <Text style={styles.primaryBtnText}>
-                                Edit preferences
-                            </Text>
-                        </LinearGradient>
-                    </Pressable>
+                            <Animated.View
+                                style={[
+                                    styles.themeThumb,
+                                    {
+                                        transform: [
+                                            {
+                                                translateX:
+                                                    thumbAnim.interpolate({
+                                                        inputRange: [0, 1],
+                                                        outputRange: [2, 26],
+                                                    }),
+                                            },
+                                        ],
+                                    },
+                                ]}
+                            >
+                                <Ionicons
+                                    name={
+                                        mode === THEMES.DARK ? "moon" : "sunny"
+                                    }
+                                    size={13}
+                                    color={palette.deepBlue}
+                                />
+                            </Animated.View>
+                        </Pressable>
 
-                    <Pressable
-                        style={styles.logoutBtn}
-                        onPress={async () => {
-                            await clearAuth();
-                        }}
-                    >
-                        <Ionicons
-                            name="log-out-outline"
-                            size={15}
-                            color={palette.textSecondary}
-                        />
-                        <Text style={styles.logoutText}>Log out</Text>
-                    </Pressable>
-                </View>
+                        <View style={styles.topActionDivider} />
+
+                        <Pressable
+                            style={styles.reloadButton}
+                            onPress={handleRefreshProfile}
+                        >
+                            <Ionicons
+                                name="refresh"
+                                size={18}
+                                color={palette.deepBlue}
+                            />
+                        </Pressable>
+                    </View>
+
+                    <View style={styles.profileCard}>
+                        <View style={styles.avatar}>
+                            <Ionicons
+                                name="person"
+                                size={36}
+                                color={palette.iceWhite}
+                            />
+                        </View>
+                        <Text style={styles.name}>{displayName}</Text>
+                        <Text style={styles.meta}>
+                            {profile?.email ?? "No email on profile"}
+                        </Text>
+                        {loading ? <Loader /> : null}
+                        {error ? (
+                            <Text style={styles.errorText}>{error}</Text>
+                        ) : null}
+
+                        <View style={styles.sectionBlock}>
+                            <Text style={styles.label}>Interests</Text>
+                            <View style={styles.tagRow}>
+                                {interests.length > 0 ? (
+                                    interests.map((interest) => (
+                                        <Text style={styles.tag} key={interest}>
+                                            {formatLabel(interest)}
+                                        </Text>
+                                    ))
+                                ) : (
+                                    <Text style={styles.valueMuted}>
+                                        No interests selected.
+                                    </Text>
+                                )}
+                            </View>
+                        </View>
+
+                        <View style={styles.sectionBlock}>
+                            <Text style={styles.label}>Budget</Text>
+                            <Text style={styles.value}>{budget}</Text>
+                        </View>
+
+                        <View style={styles.sectionBlock}>
+                            <Text style={styles.label}>Location</Text>
+                            <Text style={styles.value}>{location}</Text>
+                        </View>
+
+                        <Pressable
+                            style={styles.primaryBtnWrap}
+                            onPress={() => navigation.navigate("ProfileSetup")}
+                        >
+                            <LinearGradient
+                                colors={gradients.primaryButton}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.primaryBtn}
+                            >
+                                <Text style={styles.primaryBtnText}>
+                                    Edit preferences
+                                </Text>
+                            </LinearGradient>
+                        </Pressable>
+
+                        <Pressable
+                            style={styles.logoutBtn}
+                            onPress={async () => {
+                                await clearAuth();
+                            }}
+                        >
+                            <Ionicons
+                                name="log-out-outline"
+                                size={15}
+                                color={palette.textSecondary}
+                            />
+                            <Text style={styles.logoutText}>Log out</Text>
+                        </Pressable>
+                    </View>
+                </ScrollView>
             </LinearGradient>
         </SafeAreaView>
     );
 }
 
-function createStyles(palette) {
+function createStyles(palette, isDark) {
     return StyleSheet.create({
         safeArea: { flex: 1, backgroundColor: palette.pageTop },
         screen: { flex: 1, paddingHorizontal: 16 },
-        headerRow: {
-            marginTop: 2,
+        scrollContent: { paddingBottom: 120 },
+        topActionsBar: {
+            marginTop: 12,
+            marginBottom: -2,
+            alignSelf: "flex-end",
             flexDirection: "row",
-            justifyContent: "space-between",
             alignItems: "center",
-        },
-        greeting: {
-            color: palette.emerald,
-            fontSize: 13,
-            fontWeight: "800",
-        },
-        bellWrap: {
-            width: 34,
-            height: 34,
-            borderRadius: 17,
+            gap: 10,
+            borderRadius: 999,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
             borderWidth: 1,
             borderColor: palette.borderStrong,
-            backgroundColor: palette.surface,
-            alignItems: "center",
-            justifyContent: "center",
+            backgroundColor: isDark
+                ? "rgba(18, 41, 68, 0.62)"
+                : "rgba(248, 254, 255, 0.72)",
+        },
+        topActionDivider: {
+            width: 1,
+            height: 18,
+            backgroundColor: palette.borderStrong,
         },
         profileCard: {
             marginTop: 14,
@@ -344,21 +388,29 @@ function createStyles(palette) {
             color: palette.textSecondary,
             fontSize: 12,
         },
-        themeRow: {
-            marginTop: 8,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-        },
-        themeTrack: {
+        themeTrackTop: {
             width: 52,
             height: 28,
             borderRadius: 999,
             borderWidth: 1,
             borderColor: palette.borderStrong,
-            backgroundColor: "rgba(137,196,255,0.25)",
+            backgroundColor: isDark
+                ? "rgba(101,173,235,0.3)"
+                : "rgba(137,196,255,0.25)",
             paddingHorizontal: 2,
             justifyContent: "center",
+        },
+        reloadButton: {
+            width: 30,
+            height: 30,
+            borderRadius: 15,
+            alignItems: "center",
+            justifyContent: "center",
+            borderWidth: 1,
+            borderColor: palette.borderStrong,
+            backgroundColor: isDark
+                ? "rgba(133,196,255,0.17)"
+                : "rgba(133,196,255,0.22)",
         },
         themeThumb: {
             width: 22,

@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import PlaceCard from "../components/PlaceCard";
 import EmptyState from "../components/EmptyState";
 import Loader from "../components/Loader";
+import TopGreetingBanner from "../components/TopGreetingBanner";
 import { getProfile } from "../api/profileApi";
 import {
     createInteraction,
@@ -61,6 +61,37 @@ function normalisePlace(item, index) {
     };
 }
 
+function getGreetingMeta(date, name) {
+    const hour = date.getHours();
+    const firstName = name?.trim() || "there";
+
+    if (hour >= 5 && hour < 12) {
+        return {
+            greeting: `Good morning, ${firstName}`,
+            headline: "Start your day with places that match your vibe",
+        };
+    }
+
+    if (hour >= 12 && hour < 17) {
+        return {
+            greeting: `Good afternoon, ${firstName}`,
+            headline: "Take a refreshing break with a great nearby spot",
+        };
+    }
+
+    if (hour >= 17 && hour < 22) {
+        return {
+            greeting: `Good evening, ${firstName}`,
+            headline: "Unwind tonight with handpicked places for you",
+        };
+    }
+
+    return {
+        greeting: `Good night, ${firstName}`,
+        headline: "Late hours, calm energy, and recommendations just for you",
+    };
+}
+
 export default function HomeScreen({ navigation }) {
     const { palette, gradients } = useAppTheme();
     const styles = useMemo(() => createStyles(palette), [palette]);
@@ -70,6 +101,7 @@ export default function HomeScreen({ navigation }) {
     const [name, setName] = useState("there");
     const [places, setPlaces] = useState([]);
     const [refreshing, setRefreshing] = useState(false);
+    const [now, setNow] = useState(() => new Date());
 
     const fetchData = useCallback(async () => {
         try {
@@ -116,6 +148,14 @@ export default function HomeScreen({ navigation }) {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setNow(new Date());
+        }, 60000);
+
+        return () => clearInterval(timer);
+    }, []);
 
     async function handleRefresh() {
         try {
@@ -178,6 +218,7 @@ export default function HomeScreen({ navigation }) {
     }
 
     const data = useMemo(() => places, [places]);
+    const greetingMeta = useMemo(() => getGreetingMeta(now, name), [now, name]);
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -185,23 +226,12 @@ export default function HomeScreen({ navigation }) {
                 colors={gradients.appBackground}
                 style={styles.screen}
             >
-                <View style={styles.topRow}>
-                    <View>
-                        <Text style={styles.greeting}>
-                            Good morning, {name}
-                        </Text>
-                        <Text style={styles.heading}>
-                            Places we think you'll love today
-                        </Text>
-                    </View>
-                    <Pressable style={styles.bellWrap} onPress={handleRefresh}>
-                        <Ionicons
-                            name="notifications-outline"
-                            size={18}
-                            color={palette.deepBlue}
-                        />
-                    </Pressable>
-                </View>
+                <TopGreetingBanner
+                    eyebrow="Personalized picks"
+                    title={greetingMeta.greeting}
+                    subtitle={greetingMeta.headline}
+                    onAction={handleRefresh}
+                />
 
                 <View style={styles.filtersRow}>
                     <LinearGradient
@@ -257,40 +287,10 @@ function createStyles(palette) {
             flex: 1,
             paddingHorizontal: 16,
         },
-        topRow: {
-            marginTop: 4,
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-        },
-        greeting: {
-            color: palette.emerald,
-            fontSize: 13,
-            fontWeight: "800",
-        },
         errorText: {
             color: palette.danger,
             marginBottom: 10,
             fontSize: 12,
-        },
-        heading: {
-            marginTop: 8,
-            color: palette.textPrimary,
-            fontSize: 33,
-            lineHeight: 38,
-            fontWeight: "800",
-            maxWidth: 280,
-        },
-        bellWrap: {
-            width: 34,
-            height: 34,
-            borderRadius: 17,
-            borderWidth: 1,
-            borderColor: palette.borderStrong,
-            backgroundColor: palette.surface,
-            alignItems: "center",
-            justifyContent: "center",
-            marginTop: 4,
         },
         filtersRow: {
             flexDirection: "row",

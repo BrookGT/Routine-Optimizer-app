@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import Loader from "../components/Loader";
 import EmptyState from "../components/EmptyState";
+import TopGreetingBanner from "../components/TopGreetingBanner";
+import { Ionicons } from "@expo/vector-icons";
 import { createRoutine, deleteRoutine, getRoutines } from "../api/routineApi";
 import { getApiErrorMessage, unwrapApiData } from "../utils/api";
 import { useAppTheme } from "../context/ThemeContext";
@@ -124,16 +125,12 @@ export default function RoutineScreen() {
                 colors={gradients.appBackground}
                 style={styles.screen}
             >
-                <View style={styles.headerRow}>
-                    <Text style={styles.headerTitle}>My Routines</Text>
-                    <Pressable style={styles.bellWrap} onPress={handleRefresh}>
-                        <Ionicons
-                            name="notifications-outline"
-                            size={18}
-                            color={palette.deepBlue}
-                        />
-                    </Pressable>
-                </View>
+                <TopGreetingBanner
+                    eyebrow="Weekly planner"
+                    title="My Routines"
+                    subtitle="Stay consistent with routines built around your week"
+                    onAction={handleRefresh}
+                />
 
                 <View style={styles.statsRow}>
                     <View style={styles.statCard}>
@@ -222,27 +219,6 @@ function createStyles(palette) {
     return StyleSheet.create({
         safeArea: { flex: 1, backgroundColor: palette.pageTop },
         screen: { flex: 1, paddingHorizontal: 16 },
-        headerRow: {
-            marginTop: 2,
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-        },
-        headerTitle: {
-            color: palette.textPrimary,
-            fontSize: 30,
-            fontWeight: "800",
-        },
-        bellWrap: {
-            width: 34,
-            height: 34,
-            borderRadius: 17,
-            borderWidth: 1,
-            borderColor: palette.borderStrong,
-            backgroundColor: palette.surface,
-            alignItems: "center",
-            justifyContent: "center",
-        },
         statsRow: {
             marginTop: 14,
             flexDirection: "row",
