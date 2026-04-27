@@ -1,0 +1,2 @@
+# data/.gitkeep — ensures the data directory is committed to git.
+# Model artefacts (*.json, *.pt) written here at runtime are gitignored.
