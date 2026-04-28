@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "versionNumber": 1,
+  "lastTrainedAt": "2026-04-27T23:06:15.824720+00:00",
+  "dataSize": 841,
+  "performanceMetrics": {
+    "bandit_arms": 8,
+    "lstm_trained": true,
+    "embedding_cache_size": {
+      "places": 24,
+      "users": 16
+    },
+    "bandit_users": 16,
+    "sequence_final_loss": 0.468
+  }
+}
