@@ -10,6 +10,13 @@ import { seedPlacesIfEmpty, getAllPlaces } from "../services/place.service.js";
 import { SEED_PLACES } from "../data/places.seed.js";
 import { aggregateExperimentMetrics, getInteractionsByUser } from "../services/interaction.service.js";
 import { getUserByEmail, getUserById } from "../services/user.service.js";
+import { loadModel, isLoaded } from "../services/ai/modelService.js";
+
+const parseBoolean = (value) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") return value.toLowerCase() === "true";
+  return null;
+};
 
 /**
  * POST /api/dev/seed-places
@@ -166,6 +173,102 @@ export const interactionsLookupHandler = async (req, res, next) => {
       success: true,
       data: interactions,
       message: "Interactions retrieved",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/dev/model
+ *
+ * Returns the current model metadata and weights for inspection.
+ */
+export const modelStatusHandler = async (_req, res, next) => {
+  try {
+    const model = loadModel();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...model,
+        modelActive: isLoaded(),
+      },
+      message: "Model status retrieved",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/dev/system
+ *
+ * Returns current runtime control flags.
+ */
+export const systemStatusHandler = async (_req, res, next) => {
+  try {
+    return res.status(200).json({
+      success: true,
+      data: {
+        experimentActive: process.env.EXPERIMENT_ACTIVE === "true",
+        fallbackEnabled: process.env.RECOMMENDATION_FALLBACK_ENABLED === "true",
+      },
+      message: "System status retrieved",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/dev/system/experiment
+ * Body: { enabled: boolean }
+ */
+export const setExperimentHandler = async (req, res, next) => {
+  try {
+    const enabled = parseBoolean(req.body?.enabled);
+    if (enabled === null) {
+      return res.status(400).json({
+        success: false,
+        data: null,
+        message: "Field 'enabled' must be boolean",
+      });
+    }
+
+    process.env.EXPERIMENT_ACTIVE = enabled ? "true" : "false";
+
+    return res.status(200).json({
+      success: true,
+      data: { experimentActive: enabled },
+      message: enabled ? "Experiments enabled" : "Experiments disabled",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/dev/system/fallback
+ * Body: { enabled: boolean }
+ */
+export const setFallbackHandler = async (req, res, next) => {
+  try {
+    const enabled = parseBoolean(req.body?.enabled);
+    if (enabled === null) {
+      return res.status(400).json({
+        success: false,
+        data: null,
+        message: "Field 'enabled' must be boolean",
+      });
+    }
+
+    process.env.RECOMMENDATION_FALLBACK_ENABLED = enabled ? "true" : "false";
+
+    return res.status(200).json({
+      success: true,
+      data: { fallbackEnabled: enabled },
+      message: enabled ? "Fallback mode enabled" : "Fallback mode disabled",
     });
   } catch (error) {
     next(error);

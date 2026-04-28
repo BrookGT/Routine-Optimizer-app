@@ -7,6 +7,7 @@ import { useAuth } from "../context/AuthContext";
 import LoginScreen from "../screens/LoginScreen";
 import ProfileSetupScreen from "../screens/ProfileSetupScreen";
 import PlaceDetailScreen from "../screens/PlaceDetailScreen";
+import ActivityRecommendationsScreen from "../screens/ActivityRecommendationsScreen";
 import SplashScreen from "../screens/SplashScreen";
 import RoutineBuilderScreen from "../screens/RoutineBuilderScreen";
 import MainTabs from "./MainTabs";
@@ -14,10 +15,25 @@ import { useAppTheme } from "../context/ThemeContext";
 
 const Stack = createNativeStackNavigator();
 
-/** User has interests → they completed onboarding. */
+/**
+ * Legacy users: non-empty `interests` counts as onboarded.
+ * New flow: weekly activities, meal prefs, and a numeric weekly budget must be set.
+ */
 function hasCompletedOnboarding(profile) {
-    const interests = profile?.interests;
-    return Array.isArray(interests) && interests.length > 0;
+    if (Array.isArray(profile?.interests) && profile.interests.length > 0) {
+        return true;
+    }
+    const wa = profile?.weeklyActivities;
+    const mp = profile?.mealPreferences;
+    const wb = profile?.weeklyBudget;
+    return (
+        Array.isArray(wa) &&
+        wa.length > 0 &&
+        Array.isArray(mp) &&
+        mp.length > 0 &&
+        typeof wb === "number" &&
+        wb > 0
+    );
 }
 
 /**
@@ -132,6 +148,10 @@ export default function AppNavigator() {
             />
             <Stack.Screen name="MainTabs" component={MainTabs} />
             <Stack.Screen name="PlaceDetail" component={PlaceDetailScreen} />
+            <Stack.Screen
+                name="ActivityRecommendations"
+                component={ActivityRecommendationsScreen}
+            />
             {/* Keep Login in the stack so back-navigation works in edge cases */}
             <Stack.Screen name="Login" component={LoginScreen} />
         </Stack.Navigator>

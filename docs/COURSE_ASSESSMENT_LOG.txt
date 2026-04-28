@@ -1,0 +1,112 @@
+﻿================================================================================
+COURSE ASSESSMENT LOG — WULOYE
+================================================================================
+Repository:  https://github.com/biruk-1/Wuloye-
+Branch:      main
+Snapshot:    commits on origin/main from 2026-03-18 through 2026-04-05
+             (re-run git fetch + git log after new pushes)
+================================================================================
+
+--------------------------------------------------------------------------------
+TAB 1 — PROGRESS (ALL COMMITS ON MAIN)
+--------------------------------------------------------------------------------
+
+#  Date        Short    Full hash                                Author              Summary line
+-- ---------- ---------- ---------------------------------------- ------------------- -------------------------
+1  2026-03-18 aa0f5c2   aa0f5c2573dc6dff7d14a82f9b00308db1466a09 Biruk tessema       Routine CRUD + tests
+2  2026-03-18 8d50164   8d5016455d617d7007a203d7db283b60c085b4ec Biruk tessema       Phases 1-5 backend + tests
+3  2026-03-19 d821987   d821987d7a504254da7d21a112aeef6ba6254eb9 Biruk tessema       Context-awareness engine
+4  2026-03-24 e0aa096   e0aa096ac4a4a0dbef0ec3404a34a42cf2b70ab2 Biruk tessema       Recommendation intelligence
+5  2026-03-26 a019eb4   a019eb46a5cc0dbcd8af8da264f121f8692fa3e6 Biruk tessema       Phases 7-12 + AI + user services
+6  2026-04-02 c0df834   c0df83417da7394c53d058aa72c1098391743d96 Biruk tessema       Scaling + personalization
+7  2026-04-02 e230aaf   e230aaf22f4934af309eb4cbde1fb527479ba3e9 Biruk tessema       Production hardening + phase 18
+8  2026-04-02 573cd86   573cd86e06bbf8f7dd1ae3537fdb07a42630ae23 Biruk tessema       Mobile initiation
+9  2026-04-03 3d8731c   3d8731c0e44b032d2b7d7b83b4ae02ace7e89a1c BrookGT             ProfileSetup, RoutineBuilder, Splash, etc.
+10 2026-04-03 205ece7   205ece742252e11c036c298bc01d533fed40102d Biruk Chali Tessema Merge PR #1
+11 2026-04-03 ab22783   ab227834e2251f61b82bf28cb0ea9ec06ae5cd2b Biruk tessema       Mobile auth fixes
+12 2026-04-03 e47848d   e47848d436cc5c15f501439658a46d6bae073a8d Biruk tessema       Backend auth fixes
+13 2026-04-05 14cae84   14cae84ea34dd0cb3f62ab05d5cebba64403f3b8 BrookGT             Theme context + theming
+14 2026-04-05 5467070   5467070b6496c6c25213ca844dc0da96647ac62e Biruk Chali Tessema Merge PR #2
+15 2026-04-05 c8a3678   c8a36780ec62def3be328143c968695453014403 BrookGT             Tab icons, nav, primary button
+16 2026-04-05 9af2e9d   9af2e9d448a552569c0ca8bc0f1e19390ab4733a Biruk Chali Tessema Merge PR #3
+17 2026-04-05 ab418c4   ab418c47bafb76e7a57263cd6b2f984add70045f BileyX              APP Render Fix
+18 2026-04-05 bf8de3d   bf8de3d503d82288a1aecd3f05627e83008b44e4 Biruk Gebisa        Merge PR #4
+
+--------------------------------------------------------------------------------
+TAB 1 — AUTHOR: Biruk tessema ONLY (10 rows)
+--------------------------------------------------------------------------------
+
+#  Date        Short    Full hash                                Component summary
+-- ---------- ---------- ---------------------------------------- ---------------------------
+1  2026-03-18 aa0f5c2   aa0f5c2573dc6dff7d14a82f9b00308db1466a09 Routine CRUD + tests
+2  2026-03-18 8d50164   8d5016455d617d7007a203d7db283b60c085b4ec Phases 1-5 backend + tests
+3  2026-03-19 d821987   d821987d7a504254da7d21a112aeef6ba6254eb9 Context-awareness engine
+4  2026-03-24 e0aa096   e0aa096ac4a4a0dbef0ec3404a34a42cf2b70ab2 Recommendation intelligence
+5  2026-03-26 a019eb4   a019eb46a5cc0dbcd8af8da264f121f8692fa3e6 Phases 7-12 + AI + user services
+6  2026-04-02 c0df834   c0df83417da7394c53d058aa72c1098391743d96 Scaling + personalization
+7  2026-04-02 e230aaf   e230aaf22f4934af309eb4cbde1fb527479ba3e9 Production hardening + phase 18
+8  2026-04-02 573cd86   573cd86e06bbf8f7dd1ae3537fdb07a42630ae23 Mobile initiation
+9  2026-04-03 ab22783   ab227834e2251f61b82bf28cb0ea9ec06ae5cd2b Mobile auth fixes
+10 2026-04-03 e47848d   e47848d436cc5c15f501439658a46d6bae073a8d Backend auth fixes
+
+--------------------------------------------------------------------------------
+TAB 2 — IDEATION
+--------------------------------------------------------------------------------
+
+Component          Path             Role
+------------------ ---------------- --------------------------------------------------
+Mobile client      mobile/          UI, navigation, auth, routines, theming
+Backend API        backend/         CRUD, users, recommendations, context, scaling
+AI service         ai-service/      Model / inference support
+Admin dashboard    admin-dashboard/ Ops / admin (if in scope)
+Documentation      docs/            API + architecture notes
+
+--------------------------------------------------------------------------------
+TAB 3 — COMPONENT MODEL (EXAMPLE)
+--------------------------------------------------------------------------------
+
+Field        Value
+------------ --------------------------------------------------
+Unit         Routine module + HTTP API
+Key commit   aa0f5c2573dc6dff7d14a82f9b00308db1466a09
+
+--------------------------------------------------------------------------------
+12 LOGS / 4 WEEKS — SUGGESTED GROUPING
+--------------------------------------------------------------------------------
+
+Week | Log# | Focus                          | Example short hashes
+-----|------|--------------------------------|----------------------
+1    | 1    | Routine + early backend        | aa0f5c2, 8d50164, d821987
+2    | 1    | Recommendations + phases 7-12  | e0aa096, a019eb4
+3    | 1    | Scale + backend + mobile start | c0df834, e230aaf, 573cd86
+4    | 1    | Screens, merges, auth, UI      | 3d8731c, 205ece7, ab22783, e47848d, 14cae84, 5467070, c8a3678, 9af2e9d, ab418c4, bf8de3d
+
+
+================================================================================
+TSV — Paste into Google Sheets (tab-separated columns)
+================================================================================
+Copy from HEADER row through row 18 into Sheets.
+
+#	Date	Short hash	Full hash	Author	Commit message	Component summary	Commit URL
+1	2026-03-18	aa0f5c2	aa0f5c2573dc6dff7d14a82f9b00308db1466a09	Biruk tessema	feat: implement routine module with full CRUD and test coverage	Routine module CRUD + tests	https://github.com/biruk-1/Wuloye-/commit/aa0f5c2573dc6dff7d14a82f9b00308db1466a09
+2	2026-03-18	8d50164	8d5016455d617d7007a203d7db283b60c085b4ec	Biruk tessema	This is what phase 1 to 5 compilation of the backend test and versifcations included compilation version commit	Phases 1-5 backend + tests	https://github.com/biruk-1/Wuloye-/commit/8d5016455d617d7007a203d7db283b60c085b4ec
+3	2026-03-19	d821987	d821987d7a504254da7d21a112aeef6ba6254eb9	Biruk tessema	phase 5 Context awearness engine addition	Context-awareness engine	https://github.com/biruk-1/Wuloye-/commit/d821987d7a504254da7d21a112aeef6ba6254eb9
+4	2026-03-24	e0aa096	e0aa096ac4a4a0dbef0ec3404a34a42cf2b70ab2	Biruk tessema	Advanced Recommandation intellegence setup	Recommendation intelligence	https://github.com/biruk-1/Wuloye-/commit/e0aa096ac4a4a0dbef0ec3404a34a42cf2b70ab2
+5	2026-03-26	a019eb4	a019eb46a5cc0dbcd8af8da264f121f8692fa3e6	Biruk tessema	phase 7 : till 12 : recomandation system , AI layer learning model and user services compilation	Phases 7-12 + AI + user services	https://github.com/biruk-1/Wuloye-/commit/a019eb46a5cc0dbcd8af8da264f121f8692fa3e6
+6	2026-04-02	c0df834	c0df83417da7394c53d058aa72c1098391743d96	Biruk tessema	addition of performance scaling on the backend and the Deep personalization	Scaling + personalization	https://github.com/biruk-1/Wuloye-/commit/c0df83417da7394c53d058aa72c1098391743d96
+7	2026-04-02	e230aaf	e230aaf22f4934af309eb4cbde1fb527479ba3e9	Biruk tessema	Feate : Priduction hardening: including phase 18 Full Backend implementation	Production hardening + phase 18	https://github.com/biruk-1/Wuloye-/commit/e230aaf22f4934af309eb4cbde1fb527479ba3e9
+8	2026-04-02	573cd86	573cd86e06bbf8f7dd1ae3537fdb07a42630ae23	Biruk tessema	mobile app initiation	Mobile initiation	https://github.com/biruk-1/Wuloye-/commit/573cd86e06bbf8f7dd1ae3537fdb07a42630ae23
+9	2026-04-03	3d8731c	3d8731c0e44b032d2b7d7b83b4ae02ace7e89a1c	BrookGT	feat: add ProfileSetup, RoutineBuilder, Routine, Saved, Splash screens and related functionality	Core mobile screens	https://github.com/biruk-1/Wuloye-/commit/3d8731c0e44b032d2b7d7b83b4ae02ace7e89a1c
+10	2026-04-03	205ece7	205ece742252e11c036c298bc01d533fed40102d	Biruk Chali Tessema	Merge pull request #1 from biruk-1/Biruk-Gebisa	Merge PR #1	https://github.com/biruk-1/Wuloye-/commit/205ece742252e11c036c298bc01d533fed40102d
+11	2026-04-03	ab22783	ab227834e2251f61b82bf28cb0ea9ec06ae5cd2b	Biruk tessema	applying fixes on the mobile app authentication	Mobile auth fixes	https://github.com/biruk-1/Wuloye-/commit/ab227834e2251f61b82bf28cb0ea9ec06ae5cd2b
+12	2026-04-03	e47848d	e47848d436cc5c15f501439658a46d6bae073a8d	Biruk tessema	applying fixes on the backend on issues for the app authentication	Backend auth fixes	https://github.com/biruk-1/Wuloye-/commit/e47848d436cc5c15f501439658a46d6bae073a8d
+13	2026-04-05	14cae84	14cae84ea34dd0cb3f62ab05d5cebba64403f3b8	BrookGT	feat: Implement theme context and apply theming across screens	Theming	https://github.com/biruk-1/Wuloye-/commit/14cae84ea34dd0cb3f62ab05d5cebba64403f3b8
+14	2026-04-05	5467070	5467070b6496c6c25213ca844dc0da96647ac62e	Biruk Chali Tessema	Merge pull request #2 from biruk-1/Biruk-Gebisa	Merge PR #2	https://github.com/biruk-1/Wuloye-/commit/5467070b6496c6c25213ca844dc0da96647ac62e
+15	2026-04-05	c8a3678	c8a36780ec62def3be328143c968695453014403	BrookGT	restored the orignal tabicons, Kept  the new premium nav style, updated global primary button, converted remaining flat blue action buttons	Nav + UI polish	https://github.com/biruk-1/Wuloye-/commit/c8a36780ec62def3be328143c968695453014403
+16	2026-04-05	9af2e9d	9af2e9d448a552569c0ca8bc0f1e19390ab4733a	Biruk Chali Tessema	Merge pull request #3 from biruk-1/Biruk-Gebisa	Merge PR #3	https://github.com/biruk-1/Wuloye-/commit/9af2e9d448a552569c0ca8bc0f1e19390ab4733a
+17	2026-04-05	ab418c4	ab418c47bafb76e7a57263cd6b2f984add70045f	BileyX	APP Render Fix	Render fix	https://github.com/biruk-1/Wuloye-/commit/ab418c47bafb76e7a57263cd6b2f984add70045f
+18	2026-04-05	bf8de3d	bf8de3d503d82288a1aecd3f05627e83008b44e4	Biruk Gebisa	Merge pull request #4 from biruk-1/AppFix	Merge PR #4	https://github.com/biruk-1/Wuloye-/commit/bf8de3d503d82288a1aecd3f05627e83008b44e4
+
+================================================================================
+END OF FILE
+================================================================================

@@ -62,3 +62,41 @@ export const authenticate = async (req, res, next) => {
     });
   }
 };
+
+const parseAdminEmails = () =>
+  (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+const hasAdminClaim = (user) =>
+  user?.admin === true ||
+  user?.role === "admin" ||
+  user?.claims?.admin === true;
+
+/**
+ * Ensures the authenticated user is an admin.
+ * Admins are determined by Firebase custom claims or ADMIN_EMAILS.
+ */
+export const requireAdmin = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      data: null,
+      message: "Unauthorized: missing authentication",
+    });
+  }
+
+  const adminEmails = parseAdminEmails();
+  const email = req.user.email?.toLowerCase();
+
+  if (hasAdminClaim(req.user) || (email && adminEmails.includes(email))) {
+    return next();
+  }
+
+  return res.status(403).json({
+    success: false,
+    data: null,
+    message: "Forbidden: admin access required",
+  });
+};

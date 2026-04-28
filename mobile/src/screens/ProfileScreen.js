@@ -132,7 +132,10 @@ export default function ProfileScreen({ navigation }) {
         () => getTimeGreeting(now, displayName),
         [now, displayName],
     );
-    const budget = formatLabel(profile?.budgetRange);
+    const budget =
+        typeof profile?.weeklyBudget === "number"
+            ? `${Math.round(profile.weeklyBudget)} / week · ${formatLabel(profile?.budgetRange)}`
+            : formatLabel(profile?.budgetRange);
     const location = formatLabel(profile?.locationPreference);
 
     return (

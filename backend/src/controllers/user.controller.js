@@ -50,6 +50,11 @@ export const getProfile = async (req, res, next) => {
  *   interests          {string[]}
  *   budgetRange        {string}
  *   locationPreference {string}
+ *   sleepTime          {string}  — "HH:mm"
+ *   wakeTime           {string}  — "HH:mm"
+ *   weeklyActivities   {string[]}
+ *   mealPreferences    {string[]}
+ *   weeklyBudget       {number}
  *
  * Responses:
  *   200 — { success: true, data: <updatedProfile>, message }
@@ -61,7 +66,21 @@ export const getProfile = async (req, res, next) => {
  */
 
 /** Fields the client is allowed to update via PUT /api/profile. */
-const UPDATABLE_PROFILE_FIELDS = ["name", "interests", "budgetRange", "locationPreference"];
+const UPDATABLE_PROFILE_FIELDS = [
+    "name",
+    "interests",
+    "budgetRange",
+    "locationPreference",
+    /** "HH:mm" 24h strings */
+    "sleepTime",
+    "wakeTime",
+    /** Lifestyle tags: gym, work, study, etc. */
+    "weeklyActivities",
+    /** Meal style tags for personalization */
+    "mealPreferences",
+    /** Typical weekly spend for outings (number; client may send currency-agnostic units) */
+    "weeklyBudget",
+];
 
 export const updateProfile = async (req, res, next) => {
   try {

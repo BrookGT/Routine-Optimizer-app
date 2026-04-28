@@ -4,6 +4,8 @@ import { getInteractions, getUserProfile } from "@/services/endpoints";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
+import { LoadingState } from "@/components/ui/loading";
 
 const ACTION_VARIANTS = {
   view: "default",
@@ -90,6 +92,8 @@ export default function UsersPage() {
     setActiveSearch({ type: "me", value: "" });
   };
 
+  const isLoading = profileQuery.isLoading || interactionsQuery.isLoading;
+
   return (
     <section className="space-y-6">
       <div>
@@ -129,10 +133,12 @@ export default function UsersPage() {
         </CardContent>
       </Card>
 
+      {isLoading && <LoadingState label="Loading user profile..." />}
+
       {(profileQuery.isError || interactionsQuery.isError) && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+        <Alert variant="error">
           {getFriendlyError(profileQuery.error || interactionsQuery.error, activeSearch)}
-        </div>
+        </Alert>
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">

@@ -8,7 +8,7 @@ export default function DashboardLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-100">
       <div
         className={cn(
           "fixed inset-0 z-40 md:hidden",
@@ -17,7 +17,7 @@ export default function DashboardLayout() {
       >
         <div
           className={cn(
-            "absolute inset-0 bg-slate-900/40 transition-opacity",
+            "absolute inset-0 bg-slate-950/60 transition-opacity",
             isSidebarOpen ? "opacity-100" : "opacity-0"
           )}
           onClick={() => setIsSidebarOpen(false)}
@@ -26,7 +26,7 @@ export default function DashboardLayout() {
         />
         <div
           className={cn(
-            "absolute left-0 top-0 h-full w-64 bg-white shadow-xl transition-transform",
+            "absolute left-0 top-0 h-full w-64 bg-slate-950 shadow-xl transition-transform",
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >

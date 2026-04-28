@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { Alert } from "@/components/ui/alert";
+import { LoadingState } from "@/components/ui/loading";
 import { getInteractions } from "@/services/endpoints";
 
 const ACTION_VARIANTS = {
@@ -147,10 +149,10 @@ export default function InteractionsPage() {
         </CardContent>
       </Card>
 
+      {interactionsQuery.isLoading && <LoadingState label="Loading interactions..." />}
+
       {interactionsQuery.isError && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-          {getFriendlyError(interactionsQuery.error)}
-        </div>
+        <Alert variant="error">{getFriendlyError(interactionsQuery.error)}</Alert>
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">

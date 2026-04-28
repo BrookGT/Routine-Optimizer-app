@@ -24,6 +24,13 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
 	(response) => response,
 	(error) => {
+		const status = error?.response?.status;
+		if (status === 401 || status === 403) {
+			window.localStorage.removeItem("adminToken");
+			window.localStorage.removeItem("firebaseToken");
+			window.dispatchEvent(new Event("admin:logout"));
+		}
+
 		const message =
 			error?.response?.data?.message ||
 			error?.message ||

@@ -14,6 +14,7 @@ import routineRouter from "./routes/routine.routes.js";
 import interactionRouter from "./routes/interaction.routes.js";
 import recommendationRouter from "./routes/recommendation.routes.js";
 import devRouter from "./routes/dev.routes.js";
+import adminRouter from "./routes/admin.routes.js";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler.js";
 import { initModelCache } from "./services/ai/modelService.js";
 import { logger } from "./utils/logger.js";
@@ -65,6 +66,9 @@ app.use(
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 app.use("/api/health", healthRouter);
+
+// Admin verification route
+app.use("/api/admin", adminRouter);
 
 // User routes — provides /api/profile and (future) /api/users/* endpoints.
 // Mounted at /api so the router controls the full path for each resource.

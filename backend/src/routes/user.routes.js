@@ -34,7 +34,8 @@ router.get("/profile", authenticate, getProfile);
  * PUT /api/profile
  *
  * Protected — updates mutable fields on the caller's profile document.
- * Updatable fields: name, interests, budgetRange, locationPreference.
+ * Updatable fields: name, interests, budgetRange, locationPreference,
+ * sleepTime, wakeTime, weeklyActivities, mealPreferences, weeklyBudget.
  */
 router.put("/profile", authenticate, updateProfile);
 

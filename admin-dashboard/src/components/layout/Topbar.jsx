@@ -1,10 +1,13 @@
-import { Bell, Menu, Search } from "lucide-react";
+import { LayoutGrid, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function Topbar({ onOpenSidebar }) {
+  const { isAuthenticated, clearToken } = useAuth();
+
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
+    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white">
+      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
@@ -15,25 +18,14 @@ export default function Topbar({ onOpenSidebar }) {
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Operations</p>
-            <h2 className="text-xl font-bold text-slate-900">Control Center</h2>
-          </div>
+          <LayoutGrid className="h-4 w-4 text-slate-500" />
+          <span className="text-sm font-semibold text-slate-600">Admin Dashboard</span>
         </div>
-
-        <div className="flex items-center gap-3">
-          <div className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 md:flex">
-            <Search className="h-4 w-4 text-slate-500" />
-            <input
-              className="w-40 bg-transparent text-sm text-slate-600 outline-none placeholder:text-slate-400"
-              placeholder="Search"
-              type="text"
-            />
-          </div>
-          <Button variant="secondary" size="sm">
-            <Bell className="mr-2 h-4 w-4" /> Alerts
+        {isAuthenticated && (
+          <Button variant="secondary" size="sm" onClick={clearToken}>
+            Sign Out
           </Button>
-        </div>
+        )}
       </div>
     </header>
   );

@@ -17,6 +17,11 @@
  *     interests          {string[]}       — activity/interest tags
  *     budgetRange        {string}         — "low" | "medium" | "high"
  *     locationPreference {string}         — "indoor" | "outdoor" | "any"
+ *     sleepTime          {string}         — "HH:mm" (24h)
+ *     wakeTime           {string}         — "HH:mm" (24h)
+ *     weeklyActivities   {string[]}       — e.g. gym, work, study
+ *     mealPreferences    {string[]}       — meal style tags
+ *     weeklyBudget       {number}         — numeric weekly spend signal
  *     typeAffinity       {object}         — { [placeType]: number } persistent affinity scores (v6)
  *     seenPlaces         {string[]}       — ordered list of place ids the user has engaged with
  *     embedding          {object}         — { [dimension]: float 0-1 } long-term taste vector (v9)
@@ -119,6 +124,11 @@ export const getUserByEmail = async (email) => {
  *   interests          {string[]}  — list of activity/interest tags
  *   budgetRange        {string}    — e.g. "low" | "medium" | "high"
  *   locationPreference {string}    — e.g. "indoor" | "outdoor" | "any"
+ *   sleepTime          {string}
+ *   wakeTime           {string}
+ *   weeklyActivities   {string[]}
+ *   mealPreferences    {string[]}
+ *   weeklyBudget       {number}
  *
  * @param {string} uid     — Firebase Auth UID (from verified token, never from body)
  * @param {object} updates — validated fields to merge

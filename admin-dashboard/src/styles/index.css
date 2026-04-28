@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  --background: 248 250 252;
+  --background: 245 246 248;
   --surface: 255 255 255;
   --surface-muted: 241 245 249;
   --text: 15 23 42;
