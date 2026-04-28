@@ -63,6 +63,19 @@ export default function PlaceCard({ place, onPress, onSave, onDismiss }) {
                             "Premium venue with modern atmosphere and strong community vibe."}
                     </Text>
 
+                    {place?.aiInsight ? (
+                        <View style={styles.aiInsightRow}>
+                            <Ionicons
+                                name="flash"
+                                size={10}
+                                color={palette.oceanBlue}
+                            />
+                            <Text style={styles.aiInsightText} numberOfLines={1}>
+                                {place.aiInsight}
+                            </Text>
+                        </View>
+                    ) : null}
+
                     <View style={styles.footerRow}>
                         <Text style={styles.distance}>
                             {place?.distance ?? "1.1 miles away"}
@@ -164,6 +177,23 @@ function createStyles(palette) {
             color: palette.textMuted,
             fontSize: 12,
             fontWeight: "600",
+        },
+        aiInsightRow: {
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 5,
+            marginTop: 8,
+            backgroundColor: "rgba(15, 124, 199, 0.08)",
+            borderRadius: 8,
+            paddingHorizontal: 8,
+            paddingVertical: 4,
+            alignSelf: "flex-start",
+        },
+        aiInsightText: {
+            color: palette.oceanBlue,
+            fontSize: 11,
+            fontWeight: "600",
+            flexShrink: 1,
         },
         actions: {
             flexDirection: "row",

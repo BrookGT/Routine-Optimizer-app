@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "seed:places": "node scripts/seedPlaces.js",
+    "reset:system": "node scripts/reset-system.js",
     "mobile": "npx expo start \"..\\Wuloye-\\mobile\""
   },
   "dependencies": {

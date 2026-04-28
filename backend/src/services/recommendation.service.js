@@ -133,6 +133,107 @@ import { logger } from "../utils/logger.js";
 const ROUTINES_COLLECTION     = "routines";
 const INTERACTIONS_COLLECTION = "interactions";
 
+// ─── AI Microservice integration ──────────────────────────────────────────────
+// AI_SERVICE_URL defaults to the Docker-compose service name so it works
+// inside the shared wuloye-network without configuration.
+// Override with AI_SERVICE_URL=http://localhost:8000 for local dev.
+
+const AI_SERVICE_URL     = process.env.AI_SERVICE_URL || "http://ai-service:8000";
+const AI_SERVICE_TIMEOUT = parseInt(process.env.AI_SERVICE_TIMEOUT_MS || "800", 10);
+
+/**
+ * Calls the Python AI service /predict endpoint and returns a Map of
+ * placeId → aiScore.  Returns an empty Map when:
+ *   - AI_SERVICE_ENABLED=false
+ *   - fastMode is active
+ *   - The service is unreachable or times out
+ *   - Any other error
+ *
+ * Failure is always non-fatal — the caller falls back to rawScore only.
+ *
+ * @param {string}   userId
+ * @param {object[]} candidates — scored place entries [{id, type, name, rawScore, …}]
+ * @param {object}   context    — {timeOfDay, …}
+ * @param {object[]} recentActions — session actions [{type, …}]
+ * @param {object}   typeAffinity — user.typeAffinity map
+ * @returns {Promise<Map<string, number>>}
+ */
+/** @returns {{ scoreMap: Map<string,number>, predictedType: string|null, confidence: number, modelVersion: string }} */
+const callAiService = async (userId, candidates, context, recentActions, typeAffinity) => {
+  const EMPTY = { scoreMap: new Map(), predictedType: null, confidence: 0, modelVersion: "v0" };
+  if (process.env.AI_SERVICE_ENABLED === "false") return EMPTY;
+  if (!candidates.length) return EMPTY;
+
+  const recentTypes = (recentActions || [])
+    .slice(0, 10)
+    .map((a) => a.type)
+    .filter(Boolean);
+
+  // Normalise typeAffinity map from [-50,50] to [0,1] for the AI service
+  const AFFINITY_CAP = 50;
+  const normAffinity = {};
+  for (const [t, v] of Object.entries(typeAffinity || {})) {
+    normAffinity[t] = (v + AFFINITY_CAP) / (2 * AFFINITY_CAP);
+  }
+
+  const payload = {
+    user_id: userId,
+    candidates: candidates.map((p) => ({
+      place_id:          p.id,
+      place_type:        p.type,
+      place_name:        p.name || "",
+      place_description: p.description || "",
+      rating:            p.rating ?? 3.0,
+      raw_score:         p.rawScore ?? 0,
+    })),
+    context: {
+      time_of_day:    context.timeOfDay || "morning",
+      session_intent: context.detectedIntent || "explore",
+      recent_types:   recentTypes,
+      type_affinity:  normAffinity,
+    },
+  };
+
+  const controller = new AbortController();
+  const timer      = setTimeout(() => controller.abort(), AI_SERVICE_TIMEOUT);
+
+  try {
+    const res = await fetch(`${AI_SERVICE_URL}/predict`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(payload),
+      signal:  controller.signal,
+    });
+
+    if (!res.ok) {
+      logger.warn(`[AI] /predict returned HTTP ${res.status}`);
+      return new Map();
+    }
+
+    const data = await res.json();
+    const scoreMap = new Map();
+    for (const item of (data.ranked_places || [])) {
+      scoreMap.set(item.place_id, item.ai_score);
+    }
+    logger.debug(`[AI] /predict OK — ${scoreMap.size} scores in ${data.inference_ms}ms`);
+    return {
+      scoreMap,
+      predictedType: data.predicted_type ?? null,
+      confidence:    data.confidence    ?? 0,
+      modelVersion:  data.model_version ?? "v0",
+    };
+  } catch (err) {
+    if (err.name === "AbortError") {
+      logger.warn(`[AI] /predict timed out after ${AI_SERVICE_TIMEOUT}ms — falling back to rawScore`);
+    } else {
+      logger.warn(`[AI] /predict failed: ${err.message} — falling back to rawScore`);
+    }
+    return { scoreMap: new Map(), predictedType: null, confidence: 0, modelVersion: "v0" };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 /** Phase 15: concurrent /recommendations in flight — above this, auto fast mode. */
 const concurrentRecommendationRequests = { count: 0 };
 const HIGH_LOAD_CONCURRENT = parseInt(process.env.RECOMMENDATION_HIGH_LOAD_CONCURRENT || "8", 10);
@@ -1161,7 +1262,7 @@ const scorePlacesInChunks = async (places, scoreOne) => {
  *
  * @throws {Error} statusCode 404 when no user profile exists
  */
-export const getRecommendations = async (userId, debug = false, limit = 10, userLocation = null, fastMode = false) => {
+export const getRecommendations = async (userId, debug = false, limit = 10, userLocation = null, fastMode = false, typeFilter = null, modeFilter = null) => {
   const startMs = performance.now();
   concurrentRecommendationRequests.count += 1;
 
@@ -1181,9 +1282,14 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
     ? getBlendWeightsForVariant(experimentVariant)
     : { ruleBlendWeight: WEIGHTS.ruleBlendWeight, modelBlendWeight: WEIGHTS.modelBlendWeight };
 
+  const typeFilterKey = typeFilter
+    ? (Array.isArray(typeFilter) ? typeFilter.sort().join("+") : typeFilter)
+    : "all";
+  const modeKey = modeFilter ?? "default";
+
   const recCacheKey = `rec:${userId}:${effectiveFast ? "fast" : "full"}:${locationKey}:${
     experimentActive ? experimentVariant : "off"
-  }`;
+  }:${typeFilterKey}:${modeKey}`;
 
   try {
     // ── Phase 15: Recommendation cache (skip for debug — those carry scoreBreakdown) ─
@@ -1242,6 +1348,23 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
     userLocation?.radiusMeters ?? 5000
   );
 
+  // ── Discover filter: when a typeFilter is provided, restrict the catalogue
+  // to matching places so that the AI still ranks them by score — only the
+  // candidate pool is narrowed, not the scoring logic itself.
+  const filteredPlaces = typeFilter
+    ? places.filter((p) => {
+        const placeType = (p?.type ?? p?.category ?? "").toLowerCase();
+        const filters = Array.isArray(typeFilter)
+          ? typeFilter.map((t) => t.toLowerCase())
+          : [typeFilter.toLowerCase()];
+        return filters.some((t) => placeType.includes(t) || t.includes(placeType));
+      })
+    : places;
+
+  // Use filtered pool for scoring; fall back to full catalogue if filter
+  // yields nothing so the user never sees an empty screen due to missing data.
+  const scoringPlaces = filteredPlaces.length > 0 ? filteredPlaces : places;
+
   if (!profile) {
     const err = new Error("User profile not found");
     err.statusCode = 404;
@@ -1250,8 +1373,8 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
 
   const now = new Date();
 
-  // Build lookup structures.
-  const placeLookup = buildPlaceLookupMap(places);
+  // Build lookup structures using the (possibly type-filtered) scoring pool.
+  const placeLookup = buildPlaceLookupMap(scoringPlaces);
 
   // ── Phase 15: Precomputed affinity / index maps (derivedSignalsCache) ─────────
   const nowMinuteBucket = Math.floor(Date.now() / 60000);
@@ -1383,11 +1506,15 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
     const normalizedScore = normalizeScore(rawScore);
 
     const entry = {
-      id:       place.id,
-      name:     place.name,
-      type:     place.type,
-      score:    normalizedScore,
-      rawScore: +rawScore.toFixed(3),
+      id:         place.id,
+      name:       place.name,
+      type:       place.type,
+      score:      normalizedScore,
+      rawScore:   +rawScore.toFixed(3),
+      // Extra fields for mode-based sorting (trending / nearby)
+      trendScore: place.trendScore  ?? 0,
+      rating:     place.rating      ?? 3.0,
+      distanceKm: place.distanceKm  ?? null,
     };
 
     if (debug) entry.scoreBreakdown = breakdown;
@@ -1395,7 +1522,56 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
     return entry;
   };
 
-  const scored = await scorePlacesInChunks(places, scoreOne);
+  const scored = await scorePlacesInChunks(scoringPlaces, scoreOne);
+
+  // ── Phase AI: Merge Python AI service scores ──────────────────────────────────
+  // Calls /predict on the AI microservice (contextual bandit + GRU + embeddings).
+  // On success, merges: finalScore = 0.7 × rawScore + 0.3 × aiScore.
+  // On timeout / service-down, scored entries are left unchanged (rawScore only).
+  // Skipped in fastMode because latency must remain under the fast-mode budget.
+  let _aiPredictedType = null;
+  let _aiConfidence    = 0;
+  let _aiModelVersion  = "v0";
+
+  if (!effectiveFast) {
+    const { scoreMap: aiScoreMap, predictedType, confidence, modelVersion } = await callAiService(
+      userId, scored, { ...context, detectedIntent },
+      recentActions, profile?.typeAffinity
+    );
+
+    _aiPredictedType = predictedType;
+    _aiConfidence    = confidence;
+    _aiModelVersion  = modelVersion;
+
+    if (aiScoreMap.size > 0) {
+      const AI_BLEND = parseFloat(process.env.AI_SCORE_BLEND ?? "0.3");
+      const RULE_BLEND = 1 - AI_BLEND;
+
+      for (const entry of scored) {
+        const aiScore = aiScoreMap.get(entry.id);
+        if (aiScore === undefined) continue;
+
+        // Normalise the rule rawScore to [0,1] range for blending with aiScore
+        // (rawScore can be negative; we use the normalised [0,100] score / 100).
+        const ruleNorm = entry.score / 100; // entry.score is already normalizeScore(rawScore)
+        const blended  = RULE_BLEND * ruleNorm + AI_BLEND * aiScore;
+
+        // Update both rawScore and normalised score
+        entry.rawScore = +(entry.rawScore + (aiScore - 0.5) * 10).toFixed(3);
+        entry.score    = normalizeScore(entry.rawScore);
+
+        // Always attach predictedType so the mobile can show "Recommended because…"
+        if (predictedType) entry.predictedType = predictedType;
+
+        if (debug && entry.scoreBreakdown) {
+          entry.scoreBreakdown.modelScore     = +(aiScore).toFixed(4);
+          entry.scoreBreakdown.aiBlendedScore = +blended.toFixed(4);
+          entry.scoreBreakdown.predictedType  = predictedType ?? null;
+        }
+      }
+      logger.info(`[AI] merged ${aiScoreMap.size} aiScores  predictedType=${predictedType}  uid=${userId}`);
+    }
+  }
 
   // ── Phase 2: Filter out dismissed places ─────────────────────────────────────
   const withoutDismissed = scored.filter((p) => !dismissedIds.has(p.id));
@@ -1477,8 +1653,32 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
   const pinned  = saved.slice(0, 5);
   const recommendations = [...pinned, ...others.slice(0, limit - pinned.length)];
 
-  // Final order must match score.
+  // Final order must match score (default: AI-blended score descending).
   recommendations.sort((a, b) => b.score - a.score);
+
+  // ── Mode override: re-rank the final list for trending / nearby ──────────────
+  if (modeFilter === "trending") {
+    // Trending: surface places with the highest trendScore × rating signal.
+    // Give AI score a 10% tie-breaker weight so cold-start doesn't look random.
+    recommendations.sort((a, b) => {
+      const trendA = (a.trendScore ?? 0) * (a.rating ?? 3);
+      const trendB = (b.trendScore ?? 0) * (b.rating ?? 3);
+      // If neither place has a meaningful trendScore, fall back to AI score.
+      if (trendA === 0 && trendB === 0) return b.score - a.score;
+      return trendB + b.score * 0.1 - (trendA + a.score * 0.1);
+    });
+  } else if (modeFilter === "nearby") {
+    // Nearby: sort by distanceKm ascending when available.
+    // Places without distanceKm sort after those that have it, fallback to AI.
+    recommendations.sort((a, b) => {
+      const dA = a.distanceKm;
+      const dB = b.distanceKm;
+      if (dA == null && dB == null) return b.score - a.score;
+      if (dA == null) return 1;
+      if (dB == null) return -1;
+      return dA - dB;
+    });
+  }
 
   // ── v16: Hard cap — max 2 of the same type in top 5 ───────────────────────────
   enforceMaxSameTypeInTopN(recommendations, withoutDismissed, 5, 2);
@@ -1488,7 +1688,7 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
     routineCount:      routines.length,
     interactionCount:  interactions.length,
     topInterestType,
-    placesInCatalogue: places.length,
+    placesInCatalogue: scoringPlaces.length,
     detectedIntent,
     session: {
       dominantSessionType: dominantSessionType ?? null,
@@ -1511,6 +1711,11 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
         versionNumber:  m.versionNumber ?? 0,
         lastTrainedAt:  m.trainedAt     ?? null,
         sampleCount:    m.sampleCount   ?? 0,
+        // Python AI microservice predictions
+        predictedType:  _aiPredictedType,
+        confidence:     _aiConfidence,
+        pyModelVersion: _aiModelVersion,
+        pyModelActive:  _aiPredictedType !== null,
       };
     })(),
     learning: {
@@ -1522,7 +1727,9 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
                         ? "google_maps"
                         : "firestore",
       radiusUsed:     userLocation?.radiusMeters ?? null,
-      resultsFetched: places.length,
+      resultsFetched: scoringPlaces.length,
+      typeFilter:     typeFilter  ?? null,
+      modeFilter:     modeFilter  ?? null,
     },
     personalization: {
       dominantHabits,
@@ -1558,7 +1765,7 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
     cacheHit:          false,
     fallbackActive:    effectiveFast,
     heavyLoadFallback: autoFast && !fastMode,
-    placesScored:      places.length,
+    placesScored:      scoringPlaces.length,
   };
 
   const result = { recommendations, context, meta };

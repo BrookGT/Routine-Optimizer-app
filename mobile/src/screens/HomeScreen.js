@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert } from "react-native";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import PlaceCard from "../components/PlaceCard";
@@ -62,6 +61,8 @@ export default function HomeScreen({ navigation }) {
     const [places, setPlaces] = useState([]);
     const [refreshing, setRefreshing] = useState(false);
     const [now, setNow] = useState(() => new Date());
+    const [aiMeta, setAiMeta] = useState(null);
+    const refreshTimerRef = useRef(null);
 
     const fetchData = useCallback(async () => {
         try {
@@ -72,17 +73,18 @@ export default function HomeScreen({ navigation }) {
                 await Promise.all([getProfile(), getRecommendations()]);
 
             const profileData = unwrapApiData(profileEnvelope, {});
-            const { recommendations } = parseRecommendationsResponse(
+            const { recommendations, meta } = parseRecommendationsResponse(
                 recommendationsEnvelope,
             );
             const mapped = Array.isArray(recommendations)
                 ? recommendations.map((item, index) =>
-                      normalisePlace(item, index),
+                      normalisePlace(item, index, meta),
                   )
                 : [];
 
             setName(profileData?.name?.trim() || "there");
             setPlaces(mapped);
+            setAiMeta(meta?.ai ?? null);
 
             if (mapped.length > 0) {
                 const impressionItems = mapped.slice(0, 8).map((place) => ({
@@ -117,6 +119,31 @@ export default function HomeScreen({ navigation }) {
         return () => clearInterval(timer);
     }, []);
 
+    // Clear any pending refresh timer on unmount
+    useEffect(() => () => clearTimeout(refreshTimerRef.current), []);
+
+    // Re-fetch recommendations 1.5 s after an interaction so the AI has time
+    // to process the signal and return updated scores on the next request.
+    const scheduleRefresh = useCallback(() => {
+        clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = setTimeout(async () => {
+            try {
+                const recommendationsEnvelope = await getRecommendations();
+                const { recommendations, meta } =
+                    parseRecommendationsResponse(recommendationsEnvelope);
+                const mapped = Array.isArray(recommendations)
+                    ? recommendations.map((item, idx) =>
+                          normalisePlace(item, idx, meta),
+                      )
+                    : [];
+                setPlaces(mapped);
+                setAiMeta(meta?.ai ?? null);
+            } catch {
+                // silent — keep existing list if refresh fails
+            }
+        }, 1500);
+    }, []);
+
     async function handleRefresh() {
         try {
             setRefreshing(true);
@@ -126,20 +153,24 @@ export default function HomeScreen({ navigation }) {
         }
     }
 
-    async function handleOpenDetail(place) {
-        try {
-            await createInteraction({
-                placeId: place.placeId,
-                actionType: INTERACTION_TYPES.CLICK,
-                metadata: {
-                    source: "home_feed",
-                    place,
-                },
-            });
-        } catch {
-            // Non-blocking: still open detail screen.
-        }
+    function handleOpenDetail(place) {
+        createInteraction({
+            placeId: place.placeId,
+            actionType: INTERACTION_TYPES.CLICK,
+            metadata: {
+                source: "home_feed",
+                place,
+            },
+        }).catch(() => null);
 
+        const parent =
+            typeof navigation.getParent === "function"
+                ? navigation.getParent()
+                : null;
+        if (parent?.navigate) {
+            parent.navigate("PlaceDetail", { place });
+            return;
+        }
         navigation.navigate("PlaceDetail", { place });
     }
 
@@ -154,6 +185,7 @@ export default function HomeScreen({ navigation }) {
                 },
             });
             Alert.alert("Saved", "Place added to your saved list.");
+            scheduleRefresh();
         } catch (err) {
             Alert.alert("Unable to save", getApiErrorMessage(err));
         }
@@ -172,6 +204,7 @@ export default function HomeScreen({ navigation }) {
             setPlaces((current) =>
                 current.filter((item) => item.placeId !== place.placeId),
             );
+            scheduleRefresh();
         } catch (err) {
             Alert.alert("Unable to dismiss", getApiErrorMessage(err));
         }
@@ -194,6 +227,7 @@ export default function HomeScreen({ navigation }) {
                 />
 
                 <View style={styles.filtersRow}>
+                    {/* For You — active, stays on this screen */}
                     <LinearGradient
                         colors={gradients.primaryButtonMint}
                         start={{ x: 0, y: 0 }}
@@ -202,9 +236,49 @@ export default function HomeScreen({ navigation }) {
                     >
                         <Text style={styles.filterChipActive}>For You</Text>
                     </LinearGradient>
-                    <Text style={styles.filterChip}>Trending</Text>
-                    <Text style={styles.filterChip}>Nearby</Text>
+
+                    {/* Trending → navigate to TrendingScreen */}
+                    <Pressable
+                        onPress={() => navigation.navigate("Trending")}
+                        hitSlop={6}
+                    >
+                        <Text style={styles.filterChip}>Trending</Text>
+                    </Pressable>
+
+                    {/* Nearby → switch to Discover tab in nearby mode */}
+                    <Pressable
+                        onPress={() => {
+                            const parent =
+                                typeof navigation.getParent === "function"
+                                    ? navigation.getParent()
+                                    : null;
+                            if (parent?.navigate) {
+                                parent.navigate("MainTabs", {
+                                    screen: "Discover",
+                                    params: { mode: "nearby" },
+                                });
+                            } else {
+                                navigation.navigate("Discover", {
+                                    mode: "nearby",
+                                });
+                            }
+                        }}
+                        hitSlop={6}
+                    >
+                        <Text style={styles.filterChip}>Nearby</Text>
+                    </Pressable>
                 </View>
+
+                {aiMeta?.pyModelActive && aiMeta?.predictedType ? (
+                    <View style={styles.aiStatusBar}>
+                        <Text style={styles.aiStatusText}>
+                            {`AI · Next predicted: ${aiMeta.predictedType.charAt(0).toUpperCase()}${aiMeta.predictedType.slice(1)}`}
+                            {aiMeta.confidence > 0
+                                ? ` · ${Math.round(aiMeta.confidence * 100)}% confidence`
+                                : ""}
+                        </Text>
+                    </View>
+                ) : null}
 
                 {loading ? <Loader /> : null}
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -285,6 +359,20 @@ function createStyles(palette) {
         },
         listContent: {
             paddingBottom: 20,
+        },
+        aiStatusBar: {
+            marginBottom: 10,
+            backgroundColor: "rgba(15, 124, 199, 0.08)",
+            borderRadius: 10,
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderWidth: 1,
+            borderColor: "rgba(15, 124, 199, 0.15)",
+        },
+        aiStatusText: {
+            color: palette.oceanBlue,
+            fontSize: 11,
+            fontWeight: "600",
         },
     });
 }

@@ -37,6 +37,8 @@ import { getRecommendations } from "../services/recommendation.service.js";
  *   lng    {number} — user longitude (enables Google Maps place source)
  *   radius {number} — search radius in km, default 5, capped at 50
  *   fast   {string} — "true" to enable fallback mode (skip embedding + AI model)
+ *   type   {string} — filter by place type (e.g. "gym", "cafe"); guides AI ranking
+ *   types  {string} — comma-separated multi-type filter (e.g. "gym,cafe")
  *
  * Error cases:
  *   404 — user profile document does not exist in Firestore
@@ -65,8 +67,30 @@ export const getRecommendationsHandler = async (req, res, next) => {
     // ── Phase 15: optional fast / fallback mode ───────────────────────────────
     const fastMode = req.query.fast === "true";
 
+    // ── Discover: optional type filter — guides the AI without overriding it ──
+    // Accepts ?type=gym  or  ?types=gym,cafe  (comma-separated).
+    const rawType  = req.query.type  ?? null;
+    const rawTypes = req.query.types ?? null;
+
+    let typeFilter = null;
+    if (rawTypes) {
+      const list = rawTypes.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+      typeFilter = list.length > 0 ? list : null;
+    } else if (rawType) {
+      typeFilter = rawType.trim().toLowerCase() || null;
+    }
+
+    // ── Mode filter: changes the final sort strategy ─────────────────────────
+    // ?mode=trending  → re-rank by trendScore × rating
+    // ?mode=nearby    → re-rank by distanceKm ascending
+    const VALID_MODES = new Set(["trending", "nearby"]);
+    const rawMode  = req.query.mode ?? null;
+    const modeFilter = rawMode && VALID_MODES.has(rawMode.toLowerCase())
+      ? rawMode.toLowerCase()
+      : null;
+
     const { recommendations, meta } = await getRecommendations(
-      req.user.uid, debug, 10, userLocation, fastMode
+      req.user.uid, debug, 10, userLocation, fastMode, typeFilter, modeFilter
     );
 
     return res.status(200).json({

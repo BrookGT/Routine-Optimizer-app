@@ -32,6 +32,13 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    env_file:
+      - ./ai-service/.env
+    environment:
+      - DATA_DIR=data
+    volumes:
+      # Persist model artefacts across container restarts
+      - ai-service-data:/app/data
     networks:
       - wuloye-network
 
@@ -39,3 +46,7 @@ services:
 networks:
   wuloye-network:
     driver: bridge
+
+# ─── Volumes ─────────────────────────────────────────────────────────────────
+volumes:
+  ai-service-data:

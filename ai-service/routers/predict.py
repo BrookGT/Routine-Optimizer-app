@@ -102,6 +102,8 @@ class PredictResponse(BaseModel):
     ranked_places:  list[RankedPlace]
     model_version:  str
     inference_ms:   int
+    predicted_type: Optional[str]  = None   # top type from sequence model for this session
+    confidence:     float          = 0.0    # probability mass on predicted_type
 
 
 # ─── Scoring helpers ─────────────────────────────────────────────────────────
@@ -196,6 +198,13 @@ def predict(req: PredictRequest) -> PredictResponse:
     # Sort descending by ai_score
     results.sort(key=lambda r: r.ai_score, reverse=True)
 
+    # Top predicted type from sequence model (highest-probability next activity for this user)
+    predicted_type: Optional[str] = None
+    confidence: float = 0.0
+    if seq_dist:
+        predicted_type = max(seq_dist, key=seq_dist.__getitem__)
+        confidence     = round(seq_dist[predicted_type], 4)
+
     elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
     if elapsed_ms > 800:
@@ -205,4 +214,6 @@ def predict(req: PredictRequest) -> PredictResponse:
         ranked_places=results,
         model_version=meta.get("version", "v0"),
         inference_ms=elapsed_ms,
+        predicted_type=predicted_type,
+        confidence=confidence,
     )

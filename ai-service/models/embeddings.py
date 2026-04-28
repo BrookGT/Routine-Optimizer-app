@@ -349,3 +349,10 @@ def build_embeddings_for_dataset(
 def cache_size() -> dict[str, int]:
     ensure_loaded()
     return {"places": len(_place_cache), "users": len(_user_cache)}
+
+
+def clear_embedding_caches() -> None:
+    """Wipe in-memory place and user embedding caches (used by POST /reset)."""
+    global _place_cache, _user_cache
+    _place_cache = {}
+    _user_cache  = {}
