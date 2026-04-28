@@ -189,21 +189,17 @@ export default function ActivityRecommendationsScreen() {
         [activityType, profile?.mealPreferences],
     );
 
-    async function openPlace(place) {
-        try {
-            await createInteraction({
-                placeId: place.placeId,
-                actionType: INTERACTION_TYPES.CLICK,
-                metadata: {
-                    source: "activity_picks",
-                    activityType,
-                    timeOfDay,
-                    place,
-                },
-            });
-        } catch {
-            /* non-blocking */
-        }
+    function openPlace(place) {
+        createInteraction({
+            placeId: place.placeId,
+            actionType: INTERACTION_TYPES.CLICK,
+            metadata: {
+                source: "activity_picks",
+                activityType,
+                timeOfDay,
+                place,
+            },
+        }).catch(() => null);
         navigation.navigate("PlaceDetail", { place });
     }
 

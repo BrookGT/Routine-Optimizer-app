@@ -361,19 +361,15 @@ export default function RoutineScreen() {
         }
     }
 
-    async function openPlaceDetail(place) {
-        try {
-            await createInteraction({
-                placeId: place.placeId,
-                actionType: INTERACTION_TYPES.CLICK,
-                metadata: {
-                    source: "routines_rec_tab",
-                    place,
-                },
-            });
-        } catch {
-            /* ignore */
-        }
+    function openPlaceDetail(place) {
+        createInteraction({
+            placeId: place.placeId,
+            actionType: INTERACTION_TYPES.CLICK,
+            metadata: {
+                source: "routines_rec_tab",
+                place,
+            },
+        }).catch(() => null);
         const parent =
             typeof navigation.getParent === "function"
                 ? navigation.getParent()

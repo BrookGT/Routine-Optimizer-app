@@ -4,6 +4,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useRef, useState } from "react";
 import HomeScreen from "../screens/HomeScreen";
+import DiscoverScreen from "../screens/DiscoverScreen";
 import RoutineScreen from "../screens/RoutineScreen";
 import SavedScreen from "../screens/SavedScreen";
 import ProfileScreen from "../screens/ProfileScreen";
@@ -13,6 +14,7 @@ const Tab = createBottomTabNavigator();
 
 const iconMap = {
     Home: "home",
+    Discover: "compass",
     Routines: "calendar-check",
     Saved: "bookmark",
     Profile: "person",
@@ -198,6 +200,7 @@ export default function MainTabs() {
             })}
         >
             <Tab.Screen name="Home" component={HomeScreen} />
+            <Tab.Screen name="Discover" component={DiscoverScreen} />
             <Tab.Screen name="Routines" component={RoutineScreen} />
             <Tab.Screen name="Saved" component={SavedScreen} />
             <Tab.Screen name="Profile" component={ProfileScreen} />

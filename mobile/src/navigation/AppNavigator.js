@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo } from "react";
@@ -8,6 +8,7 @@ import LoginScreen from "../screens/LoginScreen";
 import ProfileSetupScreen from "../screens/ProfileSetupScreen";
 import PlaceDetailScreen from "../screens/PlaceDetailScreen";
 import ActivityRecommendationsScreen from "../screens/ActivityRecommendationsScreen";
+import TrendingScreen from "../screens/TrendingScreen";
 import SplashScreen from "../screens/SplashScreen";
 import RoutineBuilderScreen from "../screens/RoutineBuilderScreen";
 import MainTabs from "./MainTabs";
@@ -147,10 +148,39 @@ export default function AppNavigator() {
                 component={RoutineBuilderScreen}
             />
             <Stack.Screen name="MainTabs" component={MainTabs} />
-            <Stack.Screen name="PlaceDetail" component={PlaceDetailScreen} />
+            <Stack.Screen
+                name="PlaceDetail"
+                component={PlaceDetailScreen}
+                options={{
+                    animation: Platform.select({
+                        ios: "slide_from_right",
+                        android: "slide_from_right",
+                        default: "fade",
+                    }),
+                    gestureEnabled: true,
+                    fullScreenGestureEnabled: true,
+                }}
+            />
             <Stack.Screen
                 name="ActivityRecommendations"
                 component={ActivityRecommendationsScreen}
+                options={{
+                    animation: "slide_from_right",
+                    gestureEnabled: true,
+                }}
+            />
+            <Stack.Screen
+                name="Trending"
+                component={TrendingScreen}
+                options={{
+                    animation: Platform.select({
+                        ios: "slide_from_right",
+                        android: "slide_from_right",
+                        default: "fade",
+                    }),
+                    gestureEnabled: true,
+                    fullScreenGestureEnabled: true,
+                }}
             />
             {/* Keep Login in the stack so back-navigation works in edge cases */}
             <Stack.Screen name="Login" component={LoginScreen} />
