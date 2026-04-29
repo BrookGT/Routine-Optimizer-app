@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     Animated,
     Pressable,
@@ -9,6 +9,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAppTheme } from "../context/ThemeContext";
+import AuthenticatedPlacePhoto from "./AuthenticatedPlacePhoto";
 
 /**
  * DiscoverCard — used in the Discover tab.
@@ -28,6 +29,14 @@ export default function DiscoverCard({ place, onPress, onSave, onDismiss }) {
         () => createStyles(palette, isDark),
         [palette, isDark],
     );
+
+    const [thumbFailed, setThumbFailed] = useState(false);
+    const thumbPath = place?.images?.[0] ?? null;
+    const showThumb = Boolean(thumbPath) && !thumbFailed;
+
+    useEffect(() => {
+        setThumbFailed(false);
+    }, [thumbPath]);
 
     const entrance = useRef(new Animated.Value(0)).current;
 
@@ -111,21 +120,39 @@ export default function DiscoverCard({ place, onPress, onSave, onDismiss }) {
                     style={styles.card}
                 >
                     {/* ── Thumbnail ── */}
-                    <LinearGradient
-                        colors={thumbColors}
-                        style={styles.thumbnail}
-                    >
-                        <Ionicons
-                            name={thumbIcon}
-                            size={26}
-                            color={palette.oceanBlue}
-                        />
+                    <View style={styles.thumbnail}>
+                        {showThumb ? (
+                            <AuthenticatedPlacePhoto
+                                imagePath={thumbPath}
+                                style={StyleSheet.absoluteFillObject}
+                                resizeMode="cover"
+                                onError={() => setThumbFailed(true)}
+                            />
+                        ) : null}
+                        {!showThumb ? (
+                            <LinearGradient
+                                colors={thumbColors}
+                                style={StyleSheet.absoluteFillObject}
+                            >
+                                <Ionicons
+                                    name={thumbIcon}
+                                    size={26}
+                                    color={palette.oceanBlue}
+                                />
+                            </LinearGradient>
+                        ) : (
+                            <LinearGradient
+                                colors={["transparent", "rgba(0,0,0,0.2)"]}
+                                style={StyleSheet.absoluteFillObject}
+                                pointerEvents="none"
+                            />
+                        )}
                         {score ? (
                             <View style={styles.scorePill}>
                                 <Text style={styles.scoreText}>{score}</Text>
                             </View>
                         ) : null}
-                    </LinearGradient>
+                    </View>
 
                     {/* ── Info ── */}
                     <View style={styles.info}>
@@ -254,6 +281,7 @@ function createStyles(palette, isDark) {
             alignItems: "center",
             justifyContent: "center",
             position: "relative",
+            overflow: "hidden",
         },
         scorePill: {
             position: "absolute",
