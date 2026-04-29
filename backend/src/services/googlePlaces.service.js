@@ -32,7 +32,8 @@
  *   source            {string}  — always "google_maps"
  */
 
-import { logger } from "../utils/logger.js";
+import { logger }                from "../utils/logger.js";
+import { buildPlacePhotoPaths }  from "../utils/placePhotoPaths.js";
 
 const GOOGLE_API_BASE = "https://maps.googleapis.com/maps/api/place";
 
@@ -145,8 +146,16 @@ const transformPlace = (raw) => {
   const userRatingsTotal = raw.user_ratings_total ?? 0;
   const priceLevel       = raw.price_level;
 
+  /** Nearby Search can include photos[] with photo_reference (limit 5 for billing/UX). */
+  const photoReferences = (raw.photos ?? [])
+    .slice(0, 5)
+    .map((p) => p.photo_reference)
+    .filter(Boolean);
+
+  const id = raw.place_id;
+
   return {
-    id:               raw.place_id,
+    id,
     name:             raw.name,
     type:             internalType,
     location:         { lat, lng, city: raw.vicinity ?? "" },
@@ -159,6 +168,8 @@ const transformPlace = (raw) => {
     trendScore:       computeTrendScore(rating, userRatingsTotal),
     userRatingsTotal,
     source:           "google_maps",
+    photoReferences,
+    images:           buildPlacePhotoPaths(id, photoReferences, 400, 5),
   };
 };
 
@@ -261,4 +272,158 @@ export const getNearbyPlaces = async (userLocation, radiusMeters = 5000) => {
 export const invalidateGoogleCache = () => {
   _cache.clear();
   logger.info("[googlePlaces] Cache purged");
+};
+
+// ─── Place Details ─────────────────────────────────────────────────────────────
+
+/** Cache for Place Details responses — 30 min TTL per place_id */
+const _detailsCache  = new Map();
+const DETAILS_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * Fields requested from the Place Details API.
+ * Kept minimal to reduce billing units (Basic + Contact + Atmosphere SKUs).
+ */
+const DETAILS_FIELDS = [
+  "place_id",
+  "name",
+  "formatted_address",
+  "formatted_phone_number",
+  "geometry",
+  "rating",
+  "user_ratings_total",
+  "reviews",
+  "opening_hours",
+  "price_level",
+  "types",
+  "photos",
+  "website",
+  "vicinity",
+].join(",");
+
+/**
+ * Fetches full Place Details from Google for a given place_id.
+ *
+ * @param {string} placeId — Google place_id
+ * @returns {Promise<object|null>} normalised place details, or null on error / missing key
+ */
+export const getPlaceDetails = async (placeId) => {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    logger.warn("[googlePlaces] GOOGLE_MAPS_API_KEY not set — skipping Place Details fetch");
+    return null;
+  }
+  if (!placeId) {
+    logger.warn("[googlePlaces] getPlaceDetails called without placeId");
+    return null;
+  }
+
+  const cached = _detailsCache.get(placeId);
+  if (cached && Date.now() - cached.ts < DETAILS_TTL_MS) {
+    logger.debug(`[googlePlaces] Details cache hit for ${placeId}`);
+    return cached.data;
+  }
+
+  try {
+    const url = new URL(`${GOOGLE_API_BASE}/details/json`);
+    url.searchParams.set("place_id", placeId);
+    url.searchParams.set("fields",   DETAILS_FIELDS);
+    url.searchParams.set("key",      apiKey);
+
+    const res  = await fetch(url.toString());
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const json = await res.json();
+    if (json.status !== "OK") {
+      throw new Error(`${json.status}: ${json.error_message ?? ""}`);
+    }
+
+    const r = json.result;
+
+    // Normalise reviews (Google returns up to 5)
+    const reviews = (r.reviews ?? []).map((rv) => ({
+      author:    rv.author_name ?? "Anonymous",
+      avatar:    rv.profile_photo_url ?? null,
+      rating:    rv.rating ?? 0,
+      text:      rv.text ?? "",
+      timeAgo:   rv.relative_time_description ?? "",
+      timestamp: rv.time ?? 0,
+    }));
+
+    // Normalise opening hours
+    const openingHours = r.opening_hours
+      ? {
+          isOpen:       r.opening_hours.open_now ?? null,
+          weekdayText:  r.opening_hours.weekday_text ?? [],
+        }
+      : null;
+
+    // Photo references — client uses /places/:id/photo?ref=… with Bearer token
+    const photos = (r.photos ?? []).map((p) => ({
+      reference:   p.photo_reference,
+      width:       p.width,
+      height:      p.height,
+      attribution: p.html_attributions?.[0] ?? null,
+    }));
+
+    const photoRefs = photos.map((p) => p.reference).filter(Boolean);
+    const images    = buildPlacePhotoPaths(r.place_id, photoRefs, 400, 5);
+
+    const details = {
+      placeId:        r.place_id,
+      name:           r.name,
+      address:        r.formatted_address ?? r.vicinity ?? null,
+      phone:          r.formatted_phone_number ?? null,
+      website:        r.website ?? null,
+      rating:         r.rating ?? null,
+      userRatingsTotal: r.user_ratings_total ?? 0,
+      location: {
+        lat:  r.geometry?.location?.lat ?? null,
+        lng:  r.geometry?.location?.lng ?? null,
+        city: r.vicinity ?? null,
+      },
+      openingHours,
+      reviews,
+      photos,
+      images,
+      tags:           (r.types ?? []).filter((t) => !GENERIC_TYPES.has(t)).slice(0, 8),
+      priceRange:     PRICE_LEVEL_MAP[r.price_level ?? 2] ?? "medium",
+      source:         "google_maps",
+    };
+
+    logger.info(`[googlePlaces] Fetched details for ${placeId} (${details.name})`);
+    _detailsCache.set(placeId, { data: details, ts: Date.now() });
+    return details;
+  } catch (err) {
+    logger.error("[googlePlaces] getPlaceDetails failed:", { placeId, message: err.message });
+    return null;
+  }
+};
+
+/**
+ * Returns a Google Place Photo URL for the given photo reference.
+ * Call is server-side — the API key is never exposed to the client.
+ *
+ * @param {string} photoReference
+ * @param {number} [maxWidth=800]
+ * @returns {Promise<string|null>} Resolved redirect URL, or null on error
+ */
+export const resolvePhotoUrl = async (photoReference, maxWidth = 800) => {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey || !photoReference) return null;
+
+  try {
+    const url = new URL(`${GOOGLE_API_BASE}/photo`);
+    url.searchParams.set("photoreference", photoReference);
+    url.searchParams.set("maxwidth",       String(maxWidth));
+    url.searchParams.set("key",            apiKey);
+
+    // Google Places Photo endpoint returns a 302 redirect to the actual CDN URL.
+    const res = await fetch(url.toString(), { redirect: "follow" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.url;
+  } catch (err) {
+    logger.error("[googlePlaces] resolvePhotoUrl failed:", { message: err.message });
+    return null;
+  }
 };
