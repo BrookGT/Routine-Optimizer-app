@@ -25,6 +25,7 @@ import { INTERACTION_TYPES } from "../utils/constants";
 import { normalisePlace } from "../utils/recommendationPlaces";
 import { getApiErrorMessage, unwrapApiData } from "../utils/api";
 import { useAppTheme } from "../context/ThemeContext";
+import { getLocationQueryParams } from "../utils/locationForApi";
 
 const LOCATION_FILTERS = [
     { id: "any", label: "Any" },
@@ -149,8 +150,9 @@ export default function ActivityRecommendationsScreen() {
         try {
             setLoading(true);
             setError("");
+            const loc = await getLocationQueryParams(5);
             const [recEnvelope, profileEnvelope] = await Promise.all([
-                getRecommendations(),
+                getRecommendations(loc),
                 getProfile(),
             ]);
             const { recommendations } =

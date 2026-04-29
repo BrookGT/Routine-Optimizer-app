@@ -35,6 +35,7 @@ import { INTERACTION_TYPES } from "../utils/constants";
 import { normalisePlace } from "../utils/recommendationPlaces";
 import { getTodaysScheduleRows } from "../utils/todaysSchedule";
 import { getApiErrorMessage, unwrapApiData } from "../utils/api";
+import { getLocationQueryParams } from "../utils/locationForApi";
 import { useAppTheme } from "../context/ThemeContext";
 
 const WEEKDAYS = [
@@ -149,10 +150,11 @@ export default function RoutineScreen() {
         try {
             setLoading(true);
             setError("");
+            const loc = await getLocationQueryParams(5);
             const [routineEnv, profileEnv, recEnv] = await Promise.all([
                 getRoutines(),
                 getProfile(),
-                getRecommendations(),
+                getRecommendations(loc),
             ]);
 
             const items = unwrapApiData(routineEnv, []);

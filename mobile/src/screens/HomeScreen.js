@@ -19,6 +19,7 @@ import { INTERACTION_TYPES } from "../utils/constants";
 import { normalisePlace } from "../utils/recommendationPlaces";
 import { getApiErrorMessage, unwrapApiData } from "../utils/api";
 import { useAppTheme } from "../context/ThemeContext";
+import useLocation from "../hooks/useLocation";
 
 function getGreetingMeta(date, name) {
     const hour = date.getHours();
@@ -64,13 +65,28 @@ export default function HomeScreen({ navigation }) {
     const [aiMeta, setAiMeta] = useState(null);
     const refreshTimerRef = useRef(null);
 
+    const { requestCurrentLocation, location: cachedLocation } = useLocation();
+
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
             setError("");
 
+            // Request location silently — no UI block if denied, just skips Google Places
+            const locationResult = await requestCurrentLocation();
+            const locationParams = locationResult?.coords
+                ? {
+                      lat:    locationResult.coords.latitude,
+                      lng:    locationResult.coords.longitude,
+                      radius: 5,
+                  }
+                : {};
+
             const [profileEnvelope, recommendationsEnvelope] =
-                await Promise.all([getProfile(), getRecommendations()]);
+                await Promise.all([
+                    getProfile(),
+                    getRecommendations(locationParams),
+                ]);
 
             const profileData = unwrapApiData(profileEnvelope, {});
             const { recommendations, meta } = parseRecommendationsResponse(
@@ -105,7 +121,7 @@ export default function HomeScreen({ navigation }) {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [requestCurrentLocation]);
 
     useEffect(() => {
         fetchData();
@@ -128,7 +144,14 @@ export default function HomeScreen({ navigation }) {
         clearTimeout(refreshTimerRef.current);
         refreshTimerRef.current = setTimeout(async () => {
             try {
-                const recommendationsEnvelope = await getRecommendations();
+                const refreshParams = cachedLocation?.coords
+                    ? {
+                          lat:    cachedLocation.coords.latitude,
+                          lng:    cachedLocation.coords.longitude,
+                          radius: 5,
+                      }
+                    : {};
+                const recommendationsEnvelope = await getRecommendations(refreshParams);
                 const { recommendations, meta } =
                     parseRecommendationsResponse(recommendationsEnvelope);
                 const mapped = Array.isArray(recommendations)
