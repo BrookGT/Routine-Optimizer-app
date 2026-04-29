@@ -129,6 +129,7 @@ import {
   EXPERIMENT_ID,
 } from "../utils/experiment.js";
 import { logger } from "../utils/logger.js";
+import { buildPlacePhotoPaths } from "../utils/placePhotoPaths.js";
 
 const ROUTINES_COLLECTION     = "routines";
 const INTERACTIONS_COLLECTION = "interactions";
@@ -1505,6 +1506,11 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
 
     const normalizedScore = normalizeScore(rawScore);
 
+    const photoRefs = place.photoReferences ?? [];
+    const images      = Array.isArray(place.images) && place.images.length
+      ? place.images.slice(0, 5)
+      : buildPlacePhotoPaths(place.id, photoRefs, 400, 5);
+
     const entry = {
       id:         place.id,
       name:       place.name,
@@ -1515,6 +1521,8 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
       trendScore: place.trendScore  ?? 0,
       rating:     place.rating      ?? 3.0,
       distanceKm: place.distanceKm  ?? null,
+      images,
+      photoReferences: photoRefs.length ? photoRefs.slice(0, 5) : undefined,
     };
 
     if (debug) entry.scoreBreakdown = breakdown;
