@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAppTheme } from "../context/ThemeContext";
+import AuthenticatedPlacePhoto from "./AuthenticatedPlacePhoto";
 
 export default function PlaceCard({ place, onPress, onSave, onDismiss }) {
     const hasActions =
@@ -33,6 +34,14 @@ export default function PlaceCard({ place, onPress, onSave, onDismiss }) {
         ],
     };
 
+    const [heroFailed, setHeroFailed] = useState(false);
+    const heroPath = place?.images?.[0] ?? null;
+    const showPhoto = Boolean(heroPath) && !heroFailed;
+
+    useEffect(() => {
+        setHeroFailed(false);
+    }, [heroPath]);
+
     return (
         <Animated.View style={[styles.wrapper, animatedStyle]}>
             <Pressable onPress={onPress}>
@@ -42,6 +51,44 @@ export default function PlaceCard({ place, onPress, onSave, onDismiss }) {
                     end={{ x: 1, y: 1 }}
                     style={styles.card}
                 >
+                    <View style={styles.hero}>
+                        {showPhoto ? (
+                            <AuthenticatedPlacePhoto
+                                imagePath={heroPath}
+                                style={styles.heroImage}
+                                resizeMode="cover"
+                                onError={() => setHeroFailed(true)}
+                            />
+                        ) : null}
+                        {!showPhoto ? (
+                            <LinearGradient
+                                colors={[
+                                    "rgba(31,159,234,0.2)",
+                                    "rgba(38,201,122,0.12)",
+                                ]}
+                                style={StyleSheet.absoluteFillObject}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                            >
+                                <View style={styles.heroPlaceholderInner}>
+                                    <Ionicons
+                                        name="image-outline"
+                                        size={28}
+                                        color={palette.oceanBlue}
+                                    />
+                                </View>
+                            </LinearGradient>
+                        ) : (
+                            <LinearGradient
+                                colors={["transparent", "rgba(0,0,0,0.12)"]}
+                                style={StyleSheet.absoluteFillObject}
+                                pointerEvents="none"
+                                start={{ x: 0, y: 0.55 }}
+                                end={{ x: 0, y: 1 }}
+                            />
+                        )}
+                    </View>
+
                     <View style={styles.badgesRow}>
                         <View style={styles.typeBadge}>
                             <Text style={styles.typeBadgeText}>
@@ -118,17 +165,33 @@ function createStyles(palette) {
             borderRadius: 20,
             borderWidth: 1,
             borderColor: palette.borderStrong,
-            padding: 16,
+            overflow: "hidden",
             shadowColor: "#2A94D7",
             shadowOffset: { width: 0, height: 8 },
             shadowOpacity: 0.12,
             shadowRadius: 18,
             elevation: 5,
         },
+        hero: {
+            height: 132,
+            width: "100%",
+            position: "relative",
+            backgroundColor: "rgba(31,159,234,0.08)",
+        },
+        heroImage: {
+            ...StyleSheet.absoluteFillObject,
+        },
+        heroPlaceholderInner: {
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+        },
         badgesRow: {
             flexDirection: "row",
             justifyContent: "space-between",
             alignItems: "center",
+            paddingHorizontal: 16,
+            paddingTop: 12,
         },
         typeBadge: {
             backgroundColor: "rgba(31, 159, 234, 0.12)",
@@ -160,18 +223,22 @@ function createStyles(palette) {
             color: palette.textPrimary,
             fontSize: 26,
             fontWeight: "800",
+            paddingHorizontal: 16,
         },
         description: {
             marginTop: 6,
             color: palette.textSecondary,
             fontSize: 13,
             lineHeight: 19,
+            paddingHorizontal: 16,
         },
         footerRow: {
             marginTop: 16,
             flexDirection: "row",
             justifyContent: "space-between",
             alignItems: "center",
+            paddingHorizontal: 16,
+            paddingBottom: 16,
         },
         distance: {
             color: palette.textMuted,
@@ -188,6 +255,7 @@ function createStyles(palette) {
             paddingHorizontal: 8,
             paddingVertical: 4,
             alignSelf: "flex-start",
+            marginHorizontal: 16,
         },
         aiInsightText: {
             color: palette.oceanBlue,
