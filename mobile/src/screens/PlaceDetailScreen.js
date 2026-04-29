@@ -13,13 +13,16 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MapView, { Marker } from "react-native-maps";
 import { createInteraction } from "../api/interactionApi";
 import { INTERACTION_TYPES } from "../utils/constants";
 import { getApiErrorMessage } from "../utils/api";
 import { enrichPlaceLocation } from "../utils/placeLocation";
 import { useAppTheme } from "../context/ThemeContext";
+import { getPlaceDetails } from "../api/placeApi";
+import { hasEmbeddedGoogleMapsSdkKey } from "../utils/mapsConfig";
+import AuthenticatedPlacePhoto from "../components/AuthenticatedPlacePhoto";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -166,7 +169,92 @@ function Stars({ rating, size = 14 }) {
 
 // ─── Image Carousel ───────────────────────────────────────────────────────────
 
-function ImageCarousel({ place, palette, isDark, onBack, onSave, isSaved }) {
+function GradientSlide({ colors, typeIcon, isDark, idx, total }) {
+    return (
+        <LinearGradient
+            colors={colors}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[carouselStyles.slide, { width: SCREEN_W }]}
+        >
+            <View style={carouselStyles.grid} pointerEvents="none">
+                {[60, 130, 200].map((x) => (
+                    <View
+                        key={`gx-${x}`}
+                        style={[carouselStyles.gridLine, { left: x, top: 0, bottom: 0, width: 1 }]}
+                    />
+                ))}
+                {[60, 130, 200].map((y) => (
+                    <View
+                        key={`gy-${y}`}
+                        style={[carouselStyles.gridLine, { top: y, left: 0, right: 0, height: 1 }]}
+                    />
+                ))}
+            </View>
+            <View style={carouselStyles.iconWrap}>
+                <Ionicons
+                    name={typeIcon}
+                    size={52}
+                    color={isDark ? "rgba(140,210,255,0.5)" : "rgba(30,110,190,0.35)"}
+                />
+            </View>
+            <View style={carouselStyles.slideLabel}>
+                <Text style={{ color: isDark ? "rgba(200,235,255,0.6)" : "rgba(20,80,140,0.5)", fontSize: 10, fontWeight: "700" }}>
+                    {idx + 1} / {total}
+                </Text>
+            </View>
+        </LinearGradient>
+    );
+}
+
+function CarouselPhotoSlide({
+    imagePath,
+    idx,
+    slideCount,
+    isDark,
+    slideGradients,
+    typeIcon,
+}) {
+    const [failed, setFailed] = useState(false);
+    const colors = slideGradients[idx % slideGradients.length] ?? slideGradients[0];
+
+    if (!imagePath || failed) {
+        return (
+            <GradientSlide
+                colors={colors}
+                typeIcon={typeIcon}
+                isDark={isDark}
+                idx={idx}
+                total={slideCount}
+            />
+        );
+    }
+
+    return (
+        <View style={[carouselStyles.slide, { width: SCREEN_W }]}>
+            <AuthenticatedPlacePhoto
+                imagePath={imagePath}
+                style={StyleSheet.absoluteFillObject}
+                resizeMode="cover"
+                onError={() => setFailed(true)}
+            />
+            <LinearGradient
+                colors={["transparent", "rgba(0,0,0,0.35)"]}
+                style={StyleSheet.absoluteFillObject}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 0, y: 1 }}
+                pointerEvents="none"
+            />
+            <View style={carouselStyles.slideLabel}>
+                <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 10, fontWeight: "700" }}>
+                    {idx + 1} / {slideCount}
+                </Text>
+            </View>
+        </View>
+    );
+}
+
+function ImageCarousel({ place, details, palette, isDark, onBack, onSave, isSaved }) {
     const scrollRef = useRef(null);
     const [activeIndex, setActiveIndex] = useState(0);
     const slideGradients = useMemo(
@@ -174,7 +262,26 @@ function ImageCarousel({ place, palette, isDark, onBack, onSave, isSaved }) {
         [place?.type, isDark],
     );
     const typeIcon = getTypeIcon(place?.type ?? "");
-    const slideCount = slideGradients.length;
+
+    // Authenticated API paths `/places/:id/photo?ref=...` (same as recommendation `images`)
+    const photoPaths = useMemo(() => {
+        if (Array.isArray(details?.images) && details.images.length) {
+            return details.images.slice(0, 5);
+        }
+        if (Array.isArray(place?.images) && place.images.length) {
+            return place.images.slice(0, 5);
+        }
+        const photos = details?.photos ?? [];
+        const placeId = place?.placeId ?? place?.id ?? "";
+        if (!placeId || !photos.length) return [];
+        return photos.slice(0, 5).map(
+            (p) =>
+                `/places/${encodeURIComponent(placeId)}/photo?ref=${encodeURIComponent(p.reference)}&w=800`,
+        );
+    }, [details?.images, details?.photos, place?.images, place?.placeId, place?.id]);
+
+    const hasPhotos = photoPaths.length > 0;
+    const slideCount = hasPhotos ? photoPaths.length : slideGradients.length;
 
     const handleScroll = useCallback((e) => {
         const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
@@ -191,69 +298,36 @@ function ImageCarousel({ place, palette, isDark, onBack, onSave, isSaved }) {
                 onMomentumScrollEnd={handleScroll}
                 scrollEventThrottle={16}
             >
-                {slideGradients.map((colors, idx) => (
-                    <LinearGradient
-                        key={idx}
-                        colors={colors}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={[carouselStyles.slide, { width: SCREEN_W }]}
-                    >
-                        {/* Decorative grid */}
-                        <View style={carouselStyles.grid} pointerEvents="none">
-                            {[60, 130, 200].map((x) => (
-                                <View
-                                    key={x}
-                                    style={[
-                                        carouselStyles.gridLine,
-                                        { left: x, top: 0, bottom: 0, width: 1 },
-                                    ]}
-                                />
-                            ))}
-                            {[60, 130, 200].map((y) => (
-                                <View
-                                    key={y}
-                                    style={[
-                                        carouselStyles.gridLine,
-                                        { top: y, left: 0, right: 0, height: 1 },
-                                    ]}
-                                />
-                            ))}
-                        </View>
-
-                        <View style={carouselStyles.iconWrap}>
-                            <Ionicons
-                                name={typeIcon}
-                                size={52}
-                                color={
-                                    isDark
-                                        ? "rgba(140,210,255,0.5)"
-                                        : "rgba(30,110,190,0.35)"
-                                }
-                            />
-                        </View>
-
-                        {/* Slide index label */}
-                        <View style={carouselStyles.slideLabel}>
-                            <Text
-                                style={{
-                                    color: isDark
-                                        ? "rgba(200,235,255,0.6)"
-                                        : "rgba(20,80,140,0.5)",
-                                    fontSize: 10,
-                                    fontWeight: "700",
-                                }}
-                            >
-                                {idx + 1} / {slideCount}
-                            </Text>
-                        </View>
-                    </LinearGradient>
-                ))}
+                {hasPhotos
+                    ? photoPaths.map((path, idx) => (
+                        <CarouselPhotoSlide
+                            key={`${path}-${idx}`}
+                            imagePath={path}
+                            idx={idx}
+                            slideCount={slideCount}
+                            isDark={isDark}
+                            slideGradients={slideGradients}
+                            typeIcon={typeIcon}
+                        />
+                    ))
+                    : null}
+                {hasPhotos
+                    ? null
+                    : slideGradients.map((colors, idx) => (
+                        <GradientSlide
+                            key={idx}
+                            colors={colors}
+                            typeIcon={typeIcon}
+                            isDark={isDark}
+                            idx={idx}
+                            total={slideCount}
+                        />
+                    ))}
             </ScrollView>
 
             {/* Dots */}
             <View style={carouselStyles.dots}>
-                {slideGradients.map((_, i) => (
+                {Array.from({ length: slideCount }).map((_, i) => (
                     <View
                         key={i}
                         style={[
@@ -265,11 +339,7 @@ function ImageCarousel({ place, palette, isDark, onBack, onSave, isSaved }) {
             </View>
 
             {/* Back button */}
-            <Pressable
-                onPress={onBack}
-                hitSlop={12}
-                style={carouselStyles.backBtn}
-            >
+            <Pressable onPress={onBack} hitSlop={12} style={carouselStyles.backBtn}>
                 <Ionicons name="chevron-back" size={20} color="#fff" />
             </Pressable>
 
@@ -455,12 +525,19 @@ const tabStyles = StyleSheet.create({
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ place, palette, isDark, styles }) {
-    const amenities = useMemo(() => getAmenities(place?.type ?? ""), [place?.type]);
-    const contactPhone = useMemo(() => {
-        const h = hashString(place?.placeId ?? "x");
-        return `+251 9${10 + (h % 80)} ${100 + (h % 900)} ${1000 + (h % 9000)}`.replace(/\s/g, " ");
-    }, [place?.placeId]);
+function OverviewTab({ place, details, palette, isDark, styles }) {
+    // Prefer Google details; fall back to local place object or static defaults
+    const tags = details?.tags?.length
+        ? details.tags
+        : (place?.tags?.length ? place.tags : getAmenities(place?.type ?? ""));
+
+    const phone   = details?.phone   ?? null;
+    const website = details?.website ?? null;
+    const address = details?.address ?? place?.addressLine ?? "Addis Ababa, Ethiopia";
+    const weekdayHours = details?.openingHours?.weekdayText ?? [];
+    const hoursDisplay = weekdayHours.length
+        ? weekdayHours[0]
+        : (place?.hoursDisplay ?? "Mon–Sun · 9:00 — 22:00");
 
     return (
         <View style={styles.tabContent}>
@@ -473,11 +550,13 @@ function OverviewTab({ place, palette, isDark, styles }) {
                 </Text>
             </View>
 
-            {/* Amenities */}
+            {/* Tags / Amenities */}
             <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Amenities</Text>
+                <Text style={styles.sectionTitle}>
+                    {details ? "Tags" : "Amenities"}
+                </Text>
                 <View style={styles.chipRow}>
-                    {amenities.map((a) => (
+                    {tags.map((a) => (
                         <View
                             key={a}
                             style={[
@@ -498,7 +577,7 @@ function OverviewTab({ place, palette, isDark, styles }) {
                                     { color: palette.textSecondary },
                                 ]}
                             >
-                                {a}
+                                {a.replace(/_/g, " ")}
                             </Text>
                         </View>
                     ))}
@@ -508,37 +587,69 @@ function OverviewTab({ place, palette, isDark, styles }) {
             {/* Contact */}
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Contact</Text>
-                <Pressable
-                    style={styles.contactRow}
-                    onPress={() =>
-                        Linking.openURL(`tel:${contactPhone}`).catch(() => null)
-                    }
-                >
-                    <View
-                        style={[
-                            styles.contactIconBox,
-                            { backgroundColor: isDark ? "rgba(20,55,95,0.8)" : "rgba(220,242,255,0.9)" },
-                        ]}
-                    >
-                        <Ionicons
-                            name="call-outline"
-                            size={16}
-                            color={palette.oceanBlue}
-                        />
-                    </View>
-                    <Text style={[styles.contactText, { color: palette.textPrimary }]}>
-                        {contactPhone}
-                    </Text>
-                    <Ionicons
-                        name="chevron-forward"
-                        size={14}
-                        color={palette.textMuted}
-                    />
-                </Pressable>
 
-                <View
-                    style={[styles.contactRow, { marginTop: 8 }]}
-                >
+                {phone ? (
+                    <Pressable
+                        style={styles.contactRow}
+                        onPress={() =>
+                            Linking.openURL(`tel:${phone}`).catch(() => null)
+                        }
+                    >
+                        <View
+                            style={[
+                                styles.contactIconBox,
+                                { backgroundColor: isDark ? "rgba(20,55,95,0.8)" : "rgba(220,242,255,0.9)" },
+                            ]}
+                        >
+                            <Ionicons
+                                name="call-outline"
+                                size={16}
+                                color={palette.oceanBlue}
+                            />
+                        </View>
+                        <Text style={[styles.contactText, { color: palette.textPrimary }]}>
+                            {phone}
+                        </Text>
+                        <Ionicons
+                            name="chevron-forward"
+                            size={14}
+                            color={palette.textMuted}
+                        />
+                    </Pressable>
+                ) : null}
+
+                {website ? (
+                    <Pressable
+                        style={[styles.contactRow, { marginTop: phone ? 8 : 0 }]}
+                        onPress={() => Linking.openURL(website).catch(() => null)}
+                    >
+                        <View
+                            style={[
+                                styles.contactIconBox,
+                                { backgroundColor: isDark ? "rgba(20,55,95,0.8)" : "rgba(220,242,255,0.9)" },
+                            ]}
+                        >
+                            <Ionicons
+                                name="globe-outline"
+                                size={16}
+                                color={palette.oceanBlue}
+                            />
+                        </View>
+                        <Text
+                            style={[styles.contactText, { color: palette.oceanBlue, flex: 1 }]}
+                            numberOfLines={1}
+                        >
+                            {website.replace(/^https?:\/\//, "")}
+                        </Text>
+                        <Ionicons
+                            name="chevron-forward"
+                            size={14}
+                            color={palette.textMuted}
+                        />
+                    </Pressable>
+                ) : null}
+
+                <View style={[styles.contactRow, { marginTop: 8 }]}>
                     <View
                         style={[
                             styles.contactIconBox,
@@ -552,13 +663,11 @@ function OverviewTab({ place, palette, isDark, styles }) {
                         />
                     </View>
                     <Text style={[styles.contactText, { color: palette.textSecondary }]}>
-                        {place?.hoursDisplay ?? "Mon–Sun · 9:00 — 22:00"}
+                        {hoursDisplay}
                     </Text>
                 </View>
 
-                <View
-                    style={[styles.contactRow, { marginTop: 8 }]}
-                >
+                <View style={[styles.contactRow, { marginTop: 8 }]}>
                     <View
                         style={[
                             styles.contactIconBox,
@@ -576,9 +685,9 @@ function OverviewTab({ place, palette, isDark, styles }) {
                             styles.contactText,
                             { color: palette.textSecondary, flex: 1 },
                         ]}
-                        numberOfLines={1}
+                        numberOfLines={2}
                     >
-                        {place?.addressLine ?? "Addis Ababa, Ethiopia"}
+                        {address}
                     </Text>
                 </View>
             </View>
@@ -588,23 +697,34 @@ function OverviewTab({ place, palette, isDark, styles }) {
 
 // ─── Reviews Tab ──────────────────────────────────────────────────────────────
 
-function ReviewsTab({ place, palette, isDark, styles }) {
+function ReviewsTab({ place, details, palette, isDark, styles }) {
+    // Use real Google reviews when available; fall back to static mock
     const h = hashString(place?.placeId ?? "x");
     const reviews = useMemo(() => {
-        const shifted = MOCK_REVIEWS.map((r, i) => ({
+        if (details?.reviews?.length) {
+            return details.reviews.map((r, i) => ({
+                id:      `gr-${i}`,
+                name:    r.author,
+                avatar:  r.avatar,
+                rating:  r.rating,
+                comment: r.text,
+                timeAgo: r.timeAgo,
+            }));
+        }
+        // Static fallback with hash-shifted ratings
+        return MOCK_REVIEWS.map((r, i) => ({
             ...r,
             rating: Math.max(
                 1,
                 Math.min(5, r.rating + (((h >> (i * 3)) & 1) === 0 ? 0 : -1)),
             ),
         }));
-        return shifted;
-    }, [h]);
+    }, [details, h]);
 
-    const avgRating = useMemo(
-        () => (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1),
-        [reviews],
-    );
+    const totalCount = details?.userRatingsTotal ?? reviews.length;
+    const avgRating  = details?.rating != null
+        ? details.rating.toFixed(1)
+        : (reviews.reduce((s, r) => s + r.rating, 0) / (reviews.length || 1)).toFixed(1);
 
     return (
         <View style={styles.tabContent}>
@@ -627,10 +747,8 @@ function ReviewsTab({ place, palette, isDark, styles }) {
                         {avgRating}
                     </Text>
                     <Stars rating={Math.round(Number(avgRating))} size={16} />
-                    <Text
-                        style={[styles.ratingCount, { color: palette.textMuted }]}
-                    >
-                        {reviews.length} reviews
+                    <Text style={[styles.ratingCount, { color: palette.textMuted }]}>
+                        {totalCount.toLocaleString()} review{totalCount !== 1 ? "s" : ""}
                     </Text>
                 </View>
             </View>
@@ -653,7 +771,7 @@ function ReviewsTab({ place, palette, isDark, styles }) {
                     <View style={styles.reviewHeader}>
                         <View style={styles.reviewAvatar}>
                             <Text style={styles.reviewAvatarText}>
-                                {review.name.charAt(0)}
+                                {(review.name ?? "?").charAt(0)}
                             </Text>
                         </View>
                         <View style={{ flex: 1 }}>
@@ -691,9 +809,9 @@ function ReviewsTab({ place, palette, isDark, styles }) {
 
 // ─── Map Tab ──────────────────────────────────────────────────────────────────
 
-function MapTab({ place, palette, isDark, styles }) {
-    const lat = place?.latitude;
-    const lng = place?.longitude;
+function MapTab({ place, details, palette, isDark, styles }) {
+    const lat = details?.location?.lat ?? place?.latitude;
+    const lng = details?.location?.lng ?? place?.longitude;
     const hasCoords = typeof lat === "number" && typeof lng === "number";
 
     if (!hasCoords) {
@@ -735,9 +853,13 @@ function MapTab({ place, palette, isDark, styles }) {
         longitudeDelta: 0.015,
     };
 
+    // Android/iOS require a native Maps SDK key baked in at build time; otherwise MapView crashes.
+    const showNativeMap =
+        Platform.OS !== "web" && hasEmbeddedGoogleMapsSdkKey();
+
     return (
         <View style={styles.tabContent}>
-            {Platform.OS === "web" ? (
+            {!showNativeMap ? (
                 <Pressable
                     style={styles.mapShell}
                     onPress={() => openMapsExternal(lat, lng, place.name)}
@@ -886,6 +1008,19 @@ export default function PlaceDetailScreen({ navigation, route }) {
     const [isSaved, setIsSaved] = useState(false);
     const saveAnim = useRef(new Animated.Value(1)).current;
 
+    // Real place details fetched from Google Places via backend
+    const [details, setDetails] = useState(null);
+
+    useEffect(() => {
+        const id = place?.placeId ?? place?.id;
+        if (!id) return;
+        getPlaceDetails(id)
+            .then((envelope) => {
+                if (envelope?.data) setDetails(envelope.data);
+            })
+            .catch(() => null); // silent — fall through to static data
+    }, [place?.placeId, place?.id]);
+
     const bottomPad = Math.max(insets.bottom, 12) + 8;
 
     async function logAction(actionType, successMessage) {
@@ -965,6 +1100,7 @@ export default function PlaceDetailScreen({ navigation, route }) {
                 {/* 1. Image Carousel — idx 0 */}
                 <ImageCarousel
                     place={place}
+                    details={details}
                     palette={palette}
                     isDark={isDark}
                     onBack={() => navigation.goBack()}
@@ -1112,6 +1248,7 @@ export default function PlaceDetailScreen({ navigation, route }) {
                     {activeTab === "Overview" && (
                         <OverviewTab
                             place={place}
+                            details={details}
                             palette={palette}
                             isDark={isDark}
                             styles={styles}
@@ -1120,6 +1257,7 @@ export default function PlaceDetailScreen({ navigation, route }) {
                     {activeTab === "Reviews" && (
                         <ReviewsTab
                             place={place}
+                            details={details}
                             palette={palette}
                             isDark={isDark}
                             styles={styles}
@@ -1128,6 +1266,7 @@ export default function PlaceDetailScreen({ navigation, route }) {
                     {activeTab === "Map" && (
                         <MapTab
                             place={place}
+                            details={details}
                             palette={palette}
                             isDark={isDark}
                             styles={styles}

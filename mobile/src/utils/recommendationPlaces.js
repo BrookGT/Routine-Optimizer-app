@@ -65,6 +65,7 @@ export function normalisePlace(item, index, meta = null) {
         score,
         distance,
         aiInsight,
+        images: Array.isArray(item?.images) ? item.images.slice(0, 5) : [],
     };
 
     return enrichPlaceLocation(base, index);

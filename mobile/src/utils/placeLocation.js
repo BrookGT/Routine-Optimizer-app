@@ -31,8 +31,14 @@ export function enrichPlaceLocation(place, index = 0) {
     const id = String(place?.placeId ?? place?.id ?? place?.name ?? index);
     const h = hashString(id);
 
-    const rawLat = place?.latitude ?? place?.lat;
-    const rawLng = place?.longitude ?? place?.lng;
+    // Support all coordinate shapes:
+    //   - place.latitude / place.longitude  (Firestore & normalised)
+    //   - place.lat / place.lng             (shorthand)
+    //   - place.location.lat / .lng         (Google Places API response shape)
+    const rawLat =
+        place?.latitude ?? place?.lat ?? place?.location?.lat;
+    const rawLng =
+        place?.longitude ?? place?.lng ?? place?.location?.lng;
     let lat =
         typeof rawLat === "number"
             ? rawLat
@@ -63,6 +69,8 @@ export function enrichPlaceLocation(place, index = 0) {
     const addressLine =
         place?.address ??
         place?.addressLine ??
+        place?.vicinity ??
+        place?.location?.city ??
         `${no} ${street}, Addis Ababa`;
 
     const areaLabel =
