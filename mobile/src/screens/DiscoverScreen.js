@@ -29,6 +29,7 @@ import { normalisePlace } from "../utils/recommendationPlaces";
 import { getApiErrorMessage } from "../utils/api";
 import Loader from "../components/Loader";
 import DiscoverCard from "../components/DiscoverCard";
+import useLocation from "../hooks/useLocation";
 
 // ─── Filter definitions ───────────────────────────────────────────────────────
 
@@ -377,6 +378,8 @@ export default function DiscoverScreen({ navigation, route }) {
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
 
+    const { requestCurrentLocation, location: cachedLocation } = useLocation();
+
     const refreshTimerRef = useRef(null);
     const headerAnim = useRef(new Animated.Value(0)).current;
 
@@ -390,10 +393,15 @@ export default function DiscoverScreen({ navigation, route }) {
     }, [headerAnim]);
 
     const buildParams = useCallback(
-        (filter) => {
+        (filter, coords) => {
             const params = {};
             if (isNearbyMode) params.mode = "nearby";
             if (filter) params.type = filter;
+            if (coords?.latitude != null) {
+                params.lat    = coords.latitude;
+                params.lng    = coords.longitude;
+                params.radius = 5;
+            }
             return params;
         },
         [isNearbyMode],
@@ -405,7 +413,14 @@ export default function DiscoverScreen({ navigation, route }) {
                 setLoading(true);
                 setError("");
 
-                const params = buildParams(filter);
+                // For nearby mode, always request fresh location; otherwise use cached
+                let coords = cachedLocation?.coords ?? null;
+                if (isNearbyMode || !coords) {
+                    const result = await requestCurrentLocation();
+                    coords = result?.coords ?? coords;
+                }
+
+                const params = buildParams(filter, coords);
                 const envelope = await getRecommendations(params);
                 const { recommendations, meta } =
                     parseRecommendationsResponse(envelope);
@@ -460,7 +475,7 @@ export default function DiscoverScreen({ navigation, route }) {
         refreshTimerRef.current = setTimeout(async () => {
             try {
                 const envelope = await getRecommendations(
-                    buildParams(selectedFilter),
+                    buildParams(selectedFilter, cachedLocation?.coords),
                 );
                 const { recommendations, meta } =
                     parseRecommendationsResponse(envelope);

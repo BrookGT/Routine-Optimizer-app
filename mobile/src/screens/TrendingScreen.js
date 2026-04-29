@@ -29,6 +29,7 @@ import {
 import { INTERACTION_TYPES } from "../utils/constants";
 import { normalisePlace } from "../utils/recommendationPlaces";
 import { getApiErrorMessage } from "../utils/api";
+import { getLocationQueryParams } from "../utils/locationForApi";
 import Loader from "../components/Loader";
 import DiscoverCard from "../components/DiscoverCard";
 
@@ -204,7 +205,11 @@ export default function TrendingScreen({ navigation }) {
             setLoading(true);
             setError("");
 
-            const envelope = await getRecommendations({ mode: "trending" });
+            const loc = await getLocationQueryParams(5);
+            const envelope = await getRecommendations({
+                mode: "trending",
+                ...loc,
+            });
             const { recommendations, meta } =
                 parseRecommendationsResponse(envelope);
 
@@ -241,7 +246,11 @@ export default function TrendingScreen({ navigation }) {
         clearTimeout(refreshTimerRef.current);
         refreshTimerRef.current = setTimeout(async () => {
             try {
-                const envelope = await getRecommendations({ mode: "trending" });
+                const loc = await getLocationQueryParams(5);
+                const envelope = await getRecommendations({
+                    mode: "trending",
+                    ...loc,
+                });
                 const { recommendations, meta } =
                     parseRecommendationsResponse(envelope);
                 const mapped = Array.isArray(recommendations)
