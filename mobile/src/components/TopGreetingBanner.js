@@ -9,6 +9,7 @@ export default function TopGreetingBanner({
     title,
     subtitle,
     onAction,
+    actionIcon = "notifications-outline",
 }) {
     const { palette, gradients, isDark } = useAppTheme();
     const styles = useMemo(
@@ -56,7 +57,7 @@ export default function TopGreetingBanner({
                         style={styles.actionButton}
                     >
                         <Ionicons
-                            name="notifications-outline"
+                            name={actionIcon}
                             size={18}
                             color={isDark ? palette.iceWhite : palette.iceWhite}
                         />

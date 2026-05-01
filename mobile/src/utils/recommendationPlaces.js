@@ -52,6 +52,14 @@ export function normalisePlace(item, index, meta = null) {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
+    // Normalise images: prefer explicit images[], fall back to single image string.
+    const rawImages = Array.isArray(item?.images) && item.images.length > 0
+        ? item.images
+        : item?.image && typeof item.image === "string" && item.image.trim()
+          ? [item.image.trim()]
+          : [];
+    const images = rawImages.filter(Boolean);
+
     const base = {
         ...item,
         id,
@@ -65,7 +73,7 @@ export function normalisePlace(item, index, meta = null) {
         score,
         distance,
         aiInsight,
-        images: Array.isArray(item?.images) ? item.images.slice(0, 5) : [],
+        images,
     };
 
     return enrichPlaceLocation(base, index);

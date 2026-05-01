@@ -64,28 +64,40 @@ export default function HomeScreen({ navigation }) {
     const [now, setNow] = useState(() => new Date());
     const [aiMeta, setAiMeta] = useState(null);
     const refreshTimerRef = useRef(null);
+    /** After one attempt to read GPS (success or deny) — avoids a Firestore-only flash before coords arrive. */
+    const [geoPrimed, setGeoPrimed] = useState(false);
 
-    const { requestCurrentLocation, location: cachedLocation } = useLocation();
+    const { location: geoLocation, requestCurrentLocation } = useLocation();
+
+    const recommendationParams = useMemo(() => {
+        const lat = geoLocation?.coords?.latitude;
+        const lng = geoLocation?.coords?.longitude;
+        if (typeof lat === "number" && typeof lng === "number") {
+            return { lat, lng, radius: 5 };
+        }
+        return {};
+    }, [geoLocation]);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            await requestCurrentLocation();
+            if (!cancelled) setGeoPrimed(true);
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [requestCurrentLocation]);
 
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
             setError("");
 
-            // Request location silently — no UI block if denied, just skips Google Places
-            const locationResult = await requestCurrentLocation();
-            const locationParams = locationResult?.coords
-                ? {
-                      lat:    locationResult.coords.latitude,
-                      lng:    locationResult.coords.longitude,
-                      radius: 5,
-                  }
-                : {};
-
             const [profileEnvelope, recommendationsEnvelope] =
                 await Promise.all([
                     getProfile(),
-                    getRecommendations(locationParams),
+                    getRecommendations(recommendationParams),
                 ]);
 
             const profileData = unwrapApiData(profileEnvelope, {});
@@ -121,11 +133,12 @@ export default function HomeScreen({ navigation }) {
         } finally {
             setLoading(false);
         }
-    }, [requestCurrentLocation]);
+    }, [recommendationParams]);
 
     useEffect(() => {
+        if (!geoPrimed) return;
         fetchData();
-    }, [fetchData]);
+    }, [geoPrimed, fetchData]);
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -144,14 +157,9 @@ export default function HomeScreen({ navigation }) {
         clearTimeout(refreshTimerRef.current);
         refreshTimerRef.current = setTimeout(async () => {
             try {
-                const refreshParams = cachedLocation?.coords
-                    ? {
-                          lat:    cachedLocation.coords.latitude,
-                          lng:    cachedLocation.coords.longitude,
-                          radius: 5,
-                      }
-                    : {};
-                const recommendationsEnvelope = await getRecommendations(refreshParams);
+                const recommendationsEnvelope = await getRecommendations(
+                    recommendationParams,
+                );
                 const { recommendations, meta } =
                     parseRecommendationsResponse(recommendationsEnvelope);
                 const mapped = Array.isArray(recommendations)
@@ -165,7 +173,7 @@ export default function HomeScreen({ navigation }) {
                 // silent — keep existing list if refresh fails
             }
         }, 1500);
-    }, []);
+    }, [recommendationParams]);
 
     async function handleRefresh() {
         try {
@@ -207,7 +215,10 @@ export default function HomeScreen({ navigation }) {
                     place,
                 },
             });
-            Alert.alert("Saved", "Place added to your saved list.");
+            Alert.alert(
+                "Saved",
+                "Place added to your saved list. View it anytime under Profile → Saved places.",
+            );
             scheduleRefresh();
         } catch (err) {
             Alert.alert("Unable to save", getApiErrorMessage(err));

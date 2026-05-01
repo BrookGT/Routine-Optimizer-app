@@ -29,9 +29,9 @@ import {
 import { INTERACTION_TYPES } from "../utils/constants";
 import { normalisePlace } from "../utils/recommendationPlaces";
 import { getApiErrorMessage } from "../utils/api";
-import { getLocationQueryParams } from "../utils/locationForApi";
 import Loader from "../components/Loader";
 import DiscoverCard from "../components/DiscoverCard";
+import useLocation from "../hooks/useLocation";
 
 // ─── Rank badge (1st / 2nd / 3rd colours) ────────────────────────────────────
 
@@ -188,6 +188,20 @@ export default function TrendingScreen({ navigation }) {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
+    /** Same as Home: wait for one GPS attempt so first fetch can use Google Places (with photos). */
+    const [geoPrimed, setGeoPrimed] = useState(false);
+
+    const { location: geoLocation, requestCurrentLocation } = useLocation();
+
+    const recommendationParams = useMemo(() => {
+        const base = { mode: "trending" };
+        const lat = geoLocation?.coords?.latitude;
+        const lng = geoLocation?.coords?.longitude;
+        if (typeof lat === "number" && typeof lng === "number") {
+            return { ...base, lat, lng, radius: 5 };
+        }
+        return base;
+    }, [geoLocation]);
 
     const refreshTimerRef = useRef(null);
     const headerAnim = useRef(new Animated.Value(0)).current;
@@ -200,16 +214,23 @@ export default function TrendingScreen({ navigation }) {
         }).start();
     }, [headerAnim]);
 
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            await requestCurrentLocation();
+            if (!cancelled) setGeoPrimed(true);
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [requestCurrentLocation]);
+
     const fetchPlaces = useCallback(async () => {
         try {
             setLoading(true);
             setError("");
 
-            const loc = await getLocationQueryParams(5);
-            const envelope = await getRecommendations({
-                mode: "trending",
-                ...loc,
-            });
+            const envelope = await getRecommendations(recommendationParams);
             const { recommendations, meta } =
                 parseRecommendationsResponse(envelope);
 
@@ -234,11 +255,12 @@ export default function TrendingScreen({ navigation }) {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [recommendationParams]);
 
     useEffect(() => {
+        if (!geoPrimed) return;
         fetchPlaces();
-    }, [fetchPlaces]);
+    }, [geoPrimed, fetchPlaces]);
 
     useEffect(() => () => clearTimeout(refreshTimerRef.current), []);
 
@@ -246,11 +268,7 @@ export default function TrendingScreen({ navigation }) {
         clearTimeout(refreshTimerRef.current);
         refreshTimerRef.current = setTimeout(async () => {
             try {
-                const loc = await getLocationQueryParams(5);
-                const envelope = await getRecommendations({
-                    mode: "trending",
-                    ...loc,
-                });
+                const envelope = await getRecommendations(recommendationParams);
                 const { recommendations, meta } =
                     parseRecommendationsResponse(envelope);
                 const mapped = Array.isArray(recommendations)
@@ -263,7 +281,7 @@ export default function TrendingScreen({ navigation }) {
                 // silent
             }
         }, 1500);
-    }, []);
+    }, [recommendationParams]);
 
     async function handleRefresh() {
         setRefreshing(true);
@@ -290,7 +308,10 @@ export default function TrendingScreen({ navigation }) {
                 actionType: INTERACTION_TYPES.SAVE,
                 metadata: { source: "trending_feed", place },
             });
-            Alert.alert("Saved", "Place added to your saved list.");
+            Alert.alert(
+                "Saved",
+                "Place added to your saved list. View it anytime under Profile → Saved places.",
+            );
             scheduleRefresh();
         } catch (err) {
             Alert.alert("Unable to save", getApiErrorMessage(err));

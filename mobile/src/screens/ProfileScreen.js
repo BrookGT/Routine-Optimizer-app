@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     Animated,
     Pressable,
+    RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
@@ -10,8 +11,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import Loader from "../components/Loader";
+import { useSavedPlaces } from "../hooks/useSavedPlaces";
 import TopGreetingBanner from "../components/TopGreetingBanner";
 import { getProfile } from "../api/profileApi";
 import { getApiErrorMessage, unwrapApiData } from "../utils/api";
@@ -138,6 +141,52 @@ export default function ProfileScreen({ navigation }) {
             : formatLabel(profile?.budgetRange);
     const location = formatLabel(profile?.locationPreference);
 
+    const {
+        loading: savedLoading,
+        error: savedError,
+        saved,
+        refreshing: savedRefreshing,
+        loadSaved,
+        handleRefresh: refreshSavedPlaces,
+    } = useSavedPlaces();
+
+    const [pullRefreshing, setPullRefreshing] = useState(false);
+
+    const savedLoadedOnce = useRef(false);
+
+    useFocusEffect(
+        useCallback(() => {
+            loadSaved({
+                silent: savedLoadedOnce.current,
+            });
+            savedLoadedOnce.current = true;
+        }, [loadSaved]),
+    );
+
+    async function handlePullRefresh() {
+        setPullRefreshing(true);
+        try {
+            await Promise.all([
+                handleRefreshProfile(),
+                refreshSavedPlaces(),
+            ]);
+        } finally {
+            setPullRefreshing(false);
+        }
+    }
+
+    function openSavedPlacesScreen() {
+        const parent =
+            typeof navigation.getParent === "function"
+                ? navigation.getParent()
+                : null;
+        if (parent?.navigate) {
+            parent.navigate("SavedPlaces");
+            return;
+        }
+        navigation.navigate("SavedPlaces");
+    }
+
     return (
         <SafeAreaView style={styles.safeArea}>
             <LinearGradient
@@ -147,15 +196,25 @@ export default function ProfileScreen({ navigation }) {
                 <ScrollView
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.scrollContent}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={pullRefreshing || savedRefreshing}
+                            onRefresh={handlePullRefresh}
+                            tintColor={palette.oceanBlue}
+                            colors={[palette.oceanBlue]}
+                        />
+                    }
                 >
                     <TopGreetingBanner
                         eyebrow="Your account"
                         title={timeGreeting}
-                        subtitle="Manage your profile, interests, and theme preferences"
-                        onAction={handleRefreshProfile}
+                        subtitle="Profile, saved places, and preferences in one place"
+                        onAction={handlePullRefresh}
                     />
 
-                    <View style={styles.topActionsBar}>
+                    <View style={styles.prefsHeaderRow}>
+                        <Text style={styles.prefsSectionLabel}>Preferences</Text>
+                        <View style={styles.topActionsBar}>
                         <Pressable
                             style={styles.themeTrackTop}
                             onPress={() =>
@@ -205,6 +264,7 @@ export default function ProfileScreen({ navigation }) {
                             />
                         </Pressable>
                     </View>
+                    </View>
 
                     <View style={styles.profileCard}>
                         <View style={styles.avatar}>
@@ -246,40 +306,79 @@ export default function ProfileScreen({ navigation }) {
                         </View>
 
                         <View style={styles.sectionBlock}>
-                            <Text style={styles.label}>Location</Text>
+                            <Text style={styles.label}>Location preference</Text>
                             <Text style={styles.value}>{location}</Text>
                         </View>
-
-                        <Pressable
-                            style={styles.primaryBtnWrap}
-                            onPress={() => navigation.navigate("ProfileSetup")}
-                        >
-                            <LinearGradient
-                                colors={gradients.primaryButton}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={styles.primaryBtn}
-                            >
-                                <Text style={styles.primaryBtnText}>
-                                    Edit preferences
-                                </Text>
-                            </LinearGradient>
-                        </Pressable>
-
-                        <Pressable
-                            style={styles.logoutBtn}
-                            onPress={async () => {
-                                await clearAuth();
-                            }}
-                        >
-                            <Ionicons
-                                name="log-out-outline"
-                                size={15}
-                                color={palette.textSecondary}
-                            />
-                            <Text style={styles.logoutText}>Log out</Text>
-                        </Pressable>
                     </View>
+
+                    <Pressable
+                        style={({ pressed }) => [
+                            styles.savedPlacesNavButton,
+                            pressed && styles.savedPlacesNavButtonPressed,
+                        ]}
+                        onPress={openSavedPlacesScreen}
+                        accessibilityRole="button"
+                        accessibilityLabel="Open saved places"
+                    >
+                        <View style={styles.savedPlacesNavIconWrap}>
+                            <Ionicons
+                                name="bookmark"
+                                size={22}
+                                color={palette.oceanBlue}
+                            />
+                        </View>
+                        <View style={styles.savedPlacesNavTextCol}>
+                            <Text style={styles.savedPlacesNavTitle}>
+                                Saved places
+                            </Text>
+                            <Text style={styles.savedPlacesNavSub}>
+                                {savedLoading
+                                    ? "Loading…"
+                                    : saved.length === 0
+                                      ? "No saves yet — tap hearts on places you love"
+                                      : `${saved.length} place${saved.length !== 1 ? "s" : ""} saved`}
+                            </Text>
+                        </View>
+                        <Ionicons
+                            name="chevron-forward"
+                            size={22}
+                            color={palette.textMuted}
+                        />
+                    </Pressable>
+
+                    {savedError ? (
+                        <Text style={styles.savedNavError}>{savedError}</Text>
+                    ) : null}
+
+                    <Pressable
+                        style={styles.primaryBtnWrap}
+                        onPress={() => navigation.navigate("ProfileSetup")}
+                    >
+                        <LinearGradient
+                            colors={gradients.primaryButton}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.primaryBtn}
+                        >
+                            <Text style={styles.primaryBtnText}>
+                                Edit preferences
+                            </Text>
+                        </LinearGradient>
+                    </Pressable>
+
+                    <Pressable
+                        style={styles.logoutBtn}
+                        onPress={async () => {
+                            await clearAuth();
+                        }}
+                    >
+                        <Ionicons
+                            name="log-out-outline"
+                            size={15}
+                            color={palette.textSecondary}
+                        />
+                        <Text style={styles.logoutText}>Log out</Text>
+                    </Pressable>
                 </ScrollView>
             </LinearGradient>
         </SafeAreaView>
@@ -290,11 +389,24 @@ function createStyles(palette, isDark) {
     return StyleSheet.create({
         safeArea: { flex: 1, backgroundColor: palette.pageTop },
         screen: { flex: 1, paddingHorizontal: 16 },
-        scrollContent: { paddingBottom: 120 },
+        scrollContent: { paddingBottom: 140 },
+        prefsHeaderRow: {
+            marginTop: 14,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+        },
+        prefsSectionLabel: {
+            flex: 1,
+            color: palette.textMuted,
+            textTransform: "uppercase",
+            fontSize: 10,
+            fontWeight: "700",
+            letterSpacing: 0.8,
+        },
         topActionsBar: {
-            marginTop: 12,
-            marginBottom: -2,
-            alignSelf: "flex-end",
+            flexShrink: 0,
             flexDirection: "row",
             alignItems: "center",
             gap: 10,
@@ -424,7 +536,7 @@ function createStyles(palette, isDark) {
             justifyContent: "center",
         },
         primaryBtnWrap: {
-            marginTop: 16,
+            marginTop: 18,
             borderRadius: 14,
             overflow: "hidden",
         },
@@ -446,11 +558,59 @@ function createStyles(palette, isDark) {
             letterSpacing: 0.5,
         },
         logoutBtn: {
-            marginTop: 12,
+            marginTop: 14,
+            marginBottom: 8,
             alignSelf: "center",
             flexDirection: "row",
             alignItems: "center",
             gap: 6,
+        },
+        savedPlacesNavButton: {
+            marginTop: 14,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+            paddingVertical: 14,
+            paddingHorizontal: 14,
+            borderRadius: 20,
+            borderWidth: 1,
+            borderColor: palette.borderStrong,
+            backgroundColor: palette.surface,
+        },
+        savedPlacesNavButtonPressed: {
+            opacity: 0.92,
+            transform: [{ scale: 0.99 }],
+        },
+        savedPlacesNavIconWrap: {
+            width: 44,
+            height: 44,
+            borderRadius: 14,
+            alignItems: "center",
+            justifyContent: "center",
+            borderWidth: 1,
+            borderColor: palette.borderSoft,
+            backgroundColor: palette.surfaceStrong,
+        },
+        savedPlacesNavTextCol: {
+            flex: 1,
+            minWidth: 0,
+        },
+        savedPlacesNavTitle: {
+            color: palette.textPrimary,
+            fontSize: 17,
+            fontWeight: "800",
+        },
+        savedPlacesNavSub: {
+            marginTop: 4,
+            color: palette.textSecondary,
+            fontSize: 12,
+            lineHeight: 17,
+        },
+        savedNavError: {
+            marginTop: 8,
+            color: palette.danger,
+            fontSize: 12,
+            paddingHorizontal: 4,
         },
         logoutText: {
             color: palette.textSecondary,
