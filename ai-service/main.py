@@ -24,7 +24,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from store.model_store import load_all
-from routers import predict, train, status, reset
+from routers import predict, train, status, reset, scrape, events
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 
@@ -78,6 +78,8 @@ app.include_router(predict.router)
 app.include_router(train.router)
 app.include_router(status.router)
 app.include_router(reset.router)
+app.include_router(scrape.router)
+app.include_router(events.router)
 
 # ─── Health check (liveness probe) ───────────────────────────────────────────
 

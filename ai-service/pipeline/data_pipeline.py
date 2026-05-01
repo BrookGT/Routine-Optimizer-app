@@ -174,7 +174,9 @@ def build_dataset(raw: dict) -> list[dict]:
     {
         user_id, place_id, place_type, time_of_day,
         action_type, interaction_score, recency,
-        session_intent, type_affinity, embedding_score
+        session_intent, type_affinity, embedding_score,
+        religion, weekend_preference, event_interests,
+        has_daily_routine, working_hours_flex
     }
     """
     interactions: list[dict] = raw["interactions"]
@@ -246,17 +248,30 @@ def build_dataset(raw: dict) -> list[dict]:
         user_emb = user.get("embedding") or {}
         emb_val  = user_emb.get(place_type, 0)
 
+        # Onboarding profile enrichment fields (new — default to empty/neutral when absent)
+        religion            = user.get("religion", "") or ""
+        weekend_preference  = user.get("weekendPreference", "") or ""
+        event_interests     = user.get("eventInterests") or []
+        daily_routine       = user.get("dailyRoutine") or {}
+        working_hours_flex  = (user.get("workingHours") or {}).get("flexible", True)
+
         dataset.append({
-            "user_id":           uid,
-            "place_id":          pid,
-            "place_type":        place_type,
-            "time_of_day":       tod,
-            "action_type":       action,
-            "interaction_score": ACTION_SCORES[action],
-            "recency":           recency,
-            "session_intent":    session_intent,
-            "type_affinity":     float(type_affinity),
-            "embedding_score":   float(emb_val),
+            "user_id":              uid,
+            "place_id":             pid,
+            "place_type":           place_type,
+            "time_of_day":          tod,
+            "action_type":          action,
+            "interaction_score":    ACTION_SCORES[action],
+            "recency":              recency,
+            "session_intent":       session_intent,
+            "type_affinity":        float(type_affinity),
+            "embedding_score":      float(emb_val),
+            # Onboarding signals — used in future model versions for richer features
+            "religion":             religion,
+            "weekend_preference":   weekend_preference,
+            "event_interests":      event_interests,
+            "has_daily_routine":    bool(daily_routine),
+            "working_hours_flex":   bool(working_hours_flex),
         })
 
     logger.info(f"[pipeline] dataset built: {len(dataset)} rows")
