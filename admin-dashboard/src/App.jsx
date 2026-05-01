@@ -9,6 +9,7 @@ import ExperimentsPage from "@/features/experiments/ExperimentsPage";
 import AiModelPage from "@/features/aiModel/AiModelPage";
 import RoutinesPage from "@/features/routines/RoutinesPage";
 import DevToolsPage from "@/features/devTools/DevToolsPage";
+import EventsPage from "@/features/events/EventsPage";
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/ai-model" element={<AiModelPage />} />
           <Route path="/experiments" element={<ExperimentsPage />} />
           <Route path="/routines" element={<RoutinesPage />} />
+          <Route path="/events" element={<EventsPage />} />
           <Route path="/dev-tools" element={<DevToolsPage />} />
         </Route>
       </Route>
