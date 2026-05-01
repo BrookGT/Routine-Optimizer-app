@@ -11,6 +11,7 @@ import "dotenv/config";
 import { logger } from "./utils/logger.js";
 import app from "./app.js";
 import { recordsMetricsPeriodically } from "./middleware/metrics.js";
+import { startScrapeScheduler } from "./jobs/scrapeEvents.js";
 
 // ─── Process-level safety guards (Phase 18) ───────────────────────────────────
 // Catches any exception that escapes all try/catch blocks.  Logs it, then
@@ -35,3 +36,8 @@ app.listen(PORT, () => {
 
 // Log in-process metrics every 60 s (Phase 18 monitoring).
 recordsMetricsPeriodically(60_000);
+
+// Start background event scraping scheduler.
+startScrapeScheduler().catch((err) =>
+  logger.warn(`[server] Scrape scheduler init failed: ${err.message}`)
+);

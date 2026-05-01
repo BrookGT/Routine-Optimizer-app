@@ -79,6 +79,12 @@
 import { db }          from "../config/firebase.js";
 import { getUserById }  from "./user.service.js";
 import { getAllPlaces }  from "./place.service.js";
+import {
+  getNearbyPlacesForDiscoverKey,
+} from "./googlePlaces.service.js";
+import { buildPlacePhotoPaths } from "../utils/placePhotoPaths.js";
+import { getUpcomingEvents } from "./event.service.js";
+import { placeMatchesDiscoverKey } from "../utils/discoverCategory.js";
 import { buildContext } from "../utils/context.js";
 import { SEED_PLACES }  from "../data/places.seed.js";
 import {
@@ -129,7 +135,6 @@ import {
   EXPERIMENT_ID,
 } from "../utils/experiment.js";
 import { logger } from "../utils/logger.js";
-import { buildPlacePhotoPaths } from "../utils/placePhotoPaths.js";
 
 const ROUTINES_COLLECTION     = "routines";
 const INTERACTIONS_COLLECTION = "interactions";
@@ -157,10 +162,11 @@ const AI_SERVICE_TIMEOUT = parseInt(process.env.AI_SERVICE_TIMEOUT_MS || "800", 
  * @param {object}   context    — {timeOfDay, …}
  * @param {object[]} recentActions — session actions [{type, …}]
  * @param {object}   typeAffinity — user.typeAffinity map
+ * @param {object}   [userProfile={}] — full user profile for onboarding signal forwarding
  * @returns {Promise<Map<string, number>>}
  */
 /** @returns {{ scoreMap: Map<string,number>, predictedType: string|null, confidence: number, modelVersion: string }} */
-const callAiService = async (userId, candidates, context, recentActions, typeAffinity) => {
+const callAiService = async (userId, candidates, context, recentActions, typeAffinity, userProfile = {}) => {
   const EMPTY = { scoreMap: new Map(), predictedType: null, confidence: 0, modelVersion: "v0" };
   if (process.env.AI_SERVICE_ENABLED === "false") return EMPTY;
   if (!candidates.length) return EMPTY;
@@ -188,10 +194,17 @@ const callAiService = async (userId, candidates, context, recentActions, typeAff
       raw_score:         p.rawScore ?? 0,
     })),
     context: {
-      time_of_day:    context.timeOfDay || "morning",
-      session_intent: context.detectedIntent || "explore",
-      recent_types:   recentTypes,
-      type_affinity:  normAffinity,
+      time_of_day:        context.timeOfDay || "morning",
+      session_intent:     context.detectedIntent || "explore",
+      recent_types:       recentTypes,
+      type_affinity:      normAffinity,
+      // Onboarding profile signals for religion + weekend preference boosts
+      religion:           userProfile?.religion           || "",
+      weekend_preference: userProfile?.weekendPreference  || "",
+      event_interests:    userProfile?.eventInterests     || [],
+      ...(context.discoverCategoryKey
+        ? { discover_category: context.discoverCategoryKey }
+        : {}),
     },
   };
 
@@ -208,7 +221,7 @@ const callAiService = async (userId, candidates, context, recentActions, typeAff
 
     if (!res.ok) {
       logger.warn(`[AI] /predict returned HTTP ${res.status}`);
-      return new Map();
+      return EMPTY;
     }
 
     const data = await res.json();
@@ -1232,6 +1245,34 @@ const scorePlacesInChunks = async (places, scoreOne) => {
   return parts.flat();
 };
 
+const mapDiscoverEventsToRecommendations = (events, lim) =>
+  events.slice(0, lim).map((ev, idx) => {
+    const raw = 62 + Math.max(0, 20 - idx * 3);
+    return {
+      id:          `evt_${ev.id}`,
+      name:        ev.title || "Event",
+      type:        "event",
+      category:    ev.category || "other",
+      description: (ev.description || "").slice(0, 280),
+      summary:     ev.description || "",
+      score:       normalizeScore(raw),
+      rawScore:    raw,
+      rating:      4,
+      trendScore:  0,
+      distanceKm:  null,
+      location:
+        ev.coordinates?.lat != null && ev.coordinates?.lng != null
+          ? { lat: ev.coordinates.lat, lng: ev.coordinates.lng, city: ev.location || "" }
+          : { lat: null, lng: null, city: ev.location || "" },
+      source_url: ev.source_url || "",
+      date:       ev.date || "",
+      image:      ev.image || "",
+      images:     ev.image ? [ev.image] : [],
+      source:     ev.source || "scraped",
+      isEvent:    true,
+    };
+  });
+
 // ─── Main Recommendation Function ────────────────────────────────────────────
 
 /**
@@ -1263,7 +1304,16 @@ const scorePlacesInChunks = async (places, scoreOne) => {
  *
  * @throws {Error} statusCode 404 when no user profile exists
  */
-export const getRecommendations = async (userId, debug = false, limit = 10, userLocation = null, fastMode = false, typeFilter = null, modeFilter = null) => {
+export const getRecommendations = async (
+  userId,
+  debug = false,
+  limit = 10,
+  userLocation = null,
+  fastMode = false,
+  typeFilter = null,
+  modeFilter = null,
+  discoverCategoryKey = null
+) => {
   const startMs = performance.now();
   concurrentRecommendationRequests.count += 1;
 
@@ -1283,9 +1333,11 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
     ? getBlendWeightsForVariant(experimentVariant)
     : { ruleBlendWeight: WEIGHTS.ruleBlendWeight, modelBlendWeight: WEIGHTS.modelBlendWeight };
 
-  const typeFilterKey = typeFilter
-    ? (Array.isArray(typeFilter) ? typeFilter.sort().join("+") : typeFilter)
-    : "all";
+  const typeFilterKey = discoverCategoryKey
+    ? `disc:${discoverCategoryKey}`
+    : typeFilter
+      ? (Array.isArray(typeFilter) ? [...typeFilter].sort().join("+") : typeFilter)
+      : "all";
   const modeKey = modeFilter ?? "default";
 
   const recCacheKey = `rec:${userId}:${effectiveFast ? "fast" : "full"}:${locationKey}:${
@@ -1341,35 +1393,196 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
     }
   }
 
-  // Places are always fetched separately because they may be location-dependent
-  // (Google Maps) and already carry their own cache inside place.service.js /
-  // googlePlaces.service.js.
-  const places = await getAllPlaces(
-    userLocation?.lat != null ? { lat: userLocation.lat, lng: userLocation.lng } : null,
-    userLocation?.radiusMeters ?? 5000
-  );
-
-  // ── Discover filter: when a typeFilter is provided, restrict the catalogue
-  // to matching places so that the AI still ranks them by score — only the
-  // candidate pool is narrowed, not the scoring logic itself.
-  const filteredPlaces = typeFilter
-    ? places.filter((p) => {
-        const placeType = (p?.type ?? p?.category ?? "").toLowerCase();
-        const filters = Array.isArray(typeFilter)
-          ? typeFilter.map((t) => t.toLowerCase())
-          : [typeFilter.toLowerCase()];
-        return filters.some((t) => placeType.includes(t) || t.includes(placeType));
-      })
-    : places;
-
-  // Use filtered pool for scoring; fall back to full catalogue if filter
-  // yields nothing so the user never sees an empty screen due to missing data.
-  const scoringPlaces = filteredPlaces.length > 0 ? filteredPlaces : places;
-
   if (!profile) {
     const err = new Error("User profile not found");
     err.statusCode = 404;
     throw err;
+  }
+
+  // ── Discover → Events: scraped upcoming events only (no place catalogue) ───
+  if (discoverCategoryKey === "events") {
+    const events        = await getUpcomingEvents(Math.max(limit * 4, 40));
+    const recommendations = mapDiscoverEventsToRecommendations(events, limit);
+    const elapsedMs     = Math.round(performance.now() - startMs);
+    const m              = loadModel();
+    const meta = {
+      profileFound:      true,
+      routineCount:      routines.length,
+      interactionCount:  interactions.length,
+      topInterestType:   null,
+      placesInCatalogue: recommendations.length,
+      detectedIntent:    null,
+      discoverCategory:  "events",
+      feedType:          "events",
+      session:           {
+        dominantSessionType: null,
+        sessionIntent:     null,
+        recentActionCount: 0,
+      },
+      longTerm:          { ...topEmbeddingEntry(profile?.embeddingSnapshot ?? null) },
+      exploration:       { explorationWeight: 0, exploitationWeight: 0, explorationActive: false },
+      ai: {
+        modelActive:    isModelLoaded(),
+        modelVersion:   m.version       ?? "v1",
+        versionNumber:  m.versionNumber ?? 0,
+        lastTrainedAt:  m.trainedAt     ?? null,
+        sampleCount:    m.sampleCount   ?? 0,
+        predictedType:  null,
+        confidence:     0,
+        pyModelVersion: "v0",
+        pyModelActive:  false,
+      },
+      learning:          { recencyWeightActive: false, behaviorShiftDetected: false },
+      location:          {
+        source:            "events_firestore",
+        radiusUsed:        userLocation?.radiusMeters ?? null,
+        resultsFetched:    recommendations.length,
+        typeFilter:        null,
+        modeFilter:        modeFilter ?? null,
+        discoverCategory: "events",
+      },
+      personalization: { dominantHabits: [], topInterestWeights: {} },
+      experiment: experimentActive
+        ? {
+            experimentActive: true,
+            experimentId:     EXPERIMENT_ID,
+            variantAssigned:  experimentVariant,
+          }
+        : {
+            experimentActive: false,
+            experimentId:     null,
+            variantAssigned:  null,
+          },
+      performance: {
+        elapsedMs,
+        cacheHit:          false,
+        fallbackActive:    effectiveFast,
+        heavyLoadFallback: autoFast && !fastMode,
+        placesScored:      0,
+      },
+    };
+
+    const result = { recommendations, context, meta };
+    // Do not cache an empty events feed — avoids a long TTL stuck on "no results"
+    // after the first scrape succeeds.
+    if (!debug && recommendations.length > 0) {
+      recommendationCache.set(recCacheKey, result, RECOMMENDATION_CACHE_TTL_MS);
+    }
+    logger.info(`[recommendations] events feed uid=${userId} count=${recommendations.length}`);
+    return result;
+  }
+
+  const radiusMeters = userLocation?.radiusMeters ?? 5000;
+
+  // Prefer narrow Google Nearby queries when a Discover chip + coords are present.
+  let places = [];
+  if (
+    discoverCategoryKey &&
+    discoverCategoryKey !== "events" &&
+    userLocation?.lat != null &&
+    process.env.GOOGLE_MAPS_API_KEY
+  ) {
+    places = await getNearbyPlacesForDiscoverKey(
+      { lat: userLocation.lat, lng: userLocation.lng },
+      radiusMeters,
+      discoverCategoryKey
+    );
+  }
+
+  if (!places.length) {
+    places = await getAllPlaces(
+      userLocation?.lat != null ? { lat: userLocation.lat, lng: userLocation.lng } : null,
+      radiusMeters
+    );
+  }
+
+  let filteredPlaces;
+  if (discoverCategoryKey && discoverCategoryKey !== "events") {
+    filteredPlaces = places.filter((p) => placeMatchesDiscoverKey(p, discoverCategoryKey));
+  } else if (typeFilter) {
+    filteredPlaces = places.filter((p) => {
+      const placeType = (p?.type ?? p?.category ?? "").toLowerCase();
+      const filters = Array.isArray(typeFilter)
+        ? typeFilter.map((t) => t.toLowerCase())
+        : [typeFilter.toLowerCase()];
+      return filters.some((t) => placeType.includes(t) || t.includes(placeType));
+    });
+  } else {
+    filteredPlaces = places;
+  }
+
+  const scoringPlaces =
+    discoverCategoryKey && discoverCategoryKey !== "events"
+      ? filteredPlaces
+      : (filteredPlaces.length > 0 ? filteredPlaces : places);
+
+  if (discoverCategoryKey && discoverCategoryKey !== "events" && scoringPlaces.length === 0) {
+    const elapsedMs = Math.round(performance.now() - startMs);
+    const m           = loadModel();
+    const meta = {
+      profileFound:      true,
+      routineCount:      routines.length,
+      interactionCount:  interactions.length,
+      topInterestType:   null,
+      placesInCatalogue: 0,
+      detectedIntent:    null,
+      discoverCategory:  discoverCategoryKey,
+      categoryEmpty:     true,
+      session:           {
+        dominantSessionType: null,
+        sessionIntent:     null,
+        recentActionCount: 0,
+      },
+      longTerm:          { ...topEmbeddingEntry(profile?.embeddingSnapshot ?? null) },
+      exploration:       { explorationWeight: 0, exploitationWeight: 0, explorationActive: false },
+      ai: {
+        modelActive:    isModelLoaded(),
+        modelVersion:   m.version       ?? "v1",
+        versionNumber:  m.versionNumber ?? 0,
+        lastTrainedAt:  m.trainedAt     ?? null,
+        sampleCount:    m.sampleCount   ?? 0,
+        predictedType:  null,
+        confidence:     0,
+        pyModelVersion: "v0",
+        pyModelActive:  false,
+      },
+      learning:          { recencyWeightActive: false, behaviorShiftDetected: false },
+      location:          {
+        source:
+          userLocation?.lat != null && process.env.GOOGLE_MAPS_API_KEY
+            ? "google_maps"
+            : "firestore",
+        radiusUsed:     userLocation?.radiusMeters ?? null,
+        resultsFetched: 0,
+        typeFilter:     typeFilter ?? null,
+        modeFilter:     modeFilter ?? null,
+        discoverCategory: discoverCategoryKey,
+      },
+      personalization: { dominantHabits: [], topInterestWeights: {} },
+      experiment: experimentActive
+        ? {
+            experimentActive: true,
+            experimentId:     EXPERIMENT_ID,
+            variantAssigned:  experimentVariant,
+          }
+        : {
+            experimentActive: false,
+            experimentId:     null,
+            variantAssigned:  null,
+          },
+      performance: {
+        elapsedMs,
+        cacheHit:          false,
+        fallbackActive:    effectiveFast,
+        heavyLoadFallback: autoFast && !fastMode,
+        placesScored:      0,
+      },
+    };
+    const result = { recommendations: [], context, meta };
+    if (!debug) {
+      recommendationCache.set(recCacheKey, result, RECOMMENDATION_CACHE_TTL_MS);
+    }
+    return result;
   }
 
   const now = new Date();
@@ -1506,10 +1719,13 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
 
     const normalizedScore = normalizeScore(rawScore);
 
-    const photoRefs = place.photoReferences ?? [];
-    const images      = Array.isArray(place.images) && place.images.length
-      ? place.images.slice(0, 5)
-      : buildPlacePhotoPaths(place.id, photoRefs, 400, 5);
+    const photoRefs = (place.photoReferences ?? []).filter(Boolean).slice(0, 5);
+    let images = [];
+    if (photoRefs.length > 0) {
+      images = buildPlacePhotoPaths(place.id, photoRefs, { max: 4, width: 800 });
+    } else if (Array.isArray(place.images) && place.images.length) {
+      images = place.images;
+    }
 
     const entry = {
       id:         place.id,
@@ -1517,13 +1733,17 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
       type:       place.type,
       score:      normalizedScore,
       rawScore:   +rawScore.toFixed(3),
-      // Extra fields for mode-based sorting (trending / nearby)
       trendScore: place.trendScore  ?? 0,
       rating:     place.rating      ?? 3.0,
       distanceKm: place.distanceKm  ?? null,
-      images,
-      photoReferences: photoRefs.length ? photoRefs.slice(0, 5) : undefined,
     };
+
+    if (images.length) entry.images = images;
+    if (photoRefs.length) entry.photoReferences = photoRefs;
+
+    if (typeof place.userRatingsTotal === "number") {
+      entry.userRatingsTotal = place.userRatingsTotal;
+    }
 
     if (debug) entry.scoreBreakdown = breakdown;
 
@@ -1543,8 +1763,12 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
 
   if (!effectiveFast) {
     const { scoreMap: aiScoreMap, predictedType, confidence, modelVersion } = await callAiService(
-      userId, scored, { ...context, detectedIntent },
-      recentActions, profile?.typeAffinity
+      userId,
+      scored,
+      { ...context, detectedIntent, discoverCategoryKey },
+      recentActions,
+      profile?.typeAffinity,
+      profile
     );
 
     _aiPredictedType = predictedType;
@@ -1738,7 +1962,9 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
       resultsFetched: scoringPlaces.length,
       typeFilter:     typeFilter  ?? null,
       modeFilter:     modeFilter  ?? null,
+      discoverCategory: discoverCategoryKey ?? null,
     },
+    discoverCategory: discoverCategoryKey ?? null,
     personalization: {
       dominantHabits,
       topInterestWeights: topWeightsForMeta(interestWeights, 5),

@@ -23,6 +23,7 @@
  */
 
 import { getRecommendations } from "../services/recommendation.service.js";
+import { resolveDiscoverFilter } from "../utils/discoverCategory.js";
 
 /**
  * GET /api/recommendations[?debug=true&lat=9.025&lng=38.747&radius=5]
@@ -37,8 +38,9 @@ import { getRecommendations } from "../services/recommendation.service.js";
  *   lng    {number} — user longitude (enables Google Maps place source)
  *   radius {number} — search radius in km, default 5, capped at 50
  *   fast   {string} — "true" to enable fallback mode (skip embedding + AI model)
- *   type   {string} — filter by place type (e.g. "gym", "cafe"); guides AI ranking
- *   types  {string} — comma-separated multi-type filter (e.g. "gym,cafe")
+ *   type     {string} — filter by place type (e.g. "gym", "restaurant"); legacy matcher
+ *   types    {string} — comma-separated multi-type filter (e.g. "gym,cafe")
+ *   category {string} — Discover chip (gym|cafe|church|events|workspace); strict filtering
  *
  * Error cases:
  *   404 — user profile document does not exist in Firestore
@@ -67,18 +69,18 @@ export const getRecommendationsHandler = async (req, res, next) => {
     // ── Phase 15: optional fast / fallback mode ───────────────────────────────
     const fastMode = req.query.fast === "true";
 
-    // ── Discover: optional type filter — guides the AI without overriding it ──
-    // Accepts ?type=gym  or  ?types=gym,cafe  (comma-separated).
-    const rawType  = req.query.type  ?? null;
-    const rawTypes = req.query.types ?? null;
+    // ── Discover: category (strict) or legacy type filter ──────────────────────
+    const rawCategory = req.query.category ?? null;
+    const rawType     = req.query.type     ?? null;
+    const rawTypes    = req.query.types    ?? null;
 
-    let typeFilter = null;
-    if (rawTypes) {
-      const list = rawTypes.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
-      typeFilter = list.length > 0 ? list : null;
-    } else if (rawType) {
-      typeFilter = rawType.trim().toLowerCase() || null;
-    }
+    const { discoverKey, legacyTypeFilter } = resolveDiscoverFilter(
+      rawCategory,
+      rawType,
+      rawTypes
+    );
+
+    const typeFilter = legacyTypeFilter;
 
     // ── Mode filter: changes the final sort strategy ─────────────────────────
     // ?mode=trending  → re-rank by trendScore × rating
@@ -90,7 +92,14 @@ export const getRecommendationsHandler = async (req, res, next) => {
       : null;
 
     const { recommendations, meta } = await getRecommendations(
-      req.user.uid, debug, 10, userLocation, fastMode, typeFilter, modeFilter
+      req.user.uid,
+      debug,
+      10,
+      userLocation,
+      fastMode,
+      typeFilter,
+      modeFilter,
+      discoverKey
     );
 
     return res.status(200).json({

@@ -80,6 +80,27 @@ const UPDATABLE_PROFILE_FIELDS = [
     "mealPreferences",
     /** Typical weekly spend for outings (number; client may send currency-agnostic units) */
     "weeklyBudget",
+    /**
+     * Working hours object: { morning: {start, end}, afternoon: {start, end}, flexible: bool }
+     * Used to avoid scheduling suggestions during work time.
+     */
+    "workingHours",
+    /** Religion: "protestant" | "orthodox" | "muslim" | "other" | "prefer_not_to_say" */
+    "religion",
+    /**
+     * Structured daily routine:
+     * {
+     *   morning:   { activities: string[], breakfastType: string },
+     *   afternoon: { lunchTime: string, lunchType: string },
+     *   evening:   { dinnerTime: string, dinnerType: string },
+     *   customActivities: string[]
+     * }
+     */
+    "dailyRoutine",
+    /** Weekend activity preference: "indoor" | "outdoor" | "hiking" | "other" */
+    "weekendPreference",
+    /** Event category interests: string[] — e.g. ["tech", "religious", "social"] */
+    "eventInterests",
 ];
 
 export const updateProfile = async (req, res, next) => {
