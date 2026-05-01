@@ -48,6 +48,7 @@ export const PLACES_COLLECTION = "places";
 export const VALID_TYPES = Object.freeze([
   "gym", "coffee", "restaurant", "park",
   "yoga", "social", "walk", "study", "outdoor",
+  "church", "hotel",
 ]);
 
 export const VALID_PRICE_RANGES = Object.freeze(["free", "low", "medium", "high"]);

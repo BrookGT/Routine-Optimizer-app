@@ -296,4 +296,28 @@ export const SEED_PLACES = [
     popularityScore: 79,
     isIndoor:        true,
   },
+
+  // ── Faith / worship (Discover → Church) ─────────────────────────────────────
+  {
+    id:              "place_25",
+    name:            "Holy Trinity Cathedral",
+    type:            "church",
+    location:        { lat: 9.0310, lng: 38.7490, city: "Addis Ababa" },
+    priceRange:      "free",
+    tags:            ["worship", "historic", "community"],
+    rating:          4.6,
+    popularityScore: 82,
+    isIndoor:        true,
+  },
+  {
+    id:              "place_26",
+    name:            "St. Joseph Parish Hall",
+    type:            "church",
+    location:        { lat: 9.0220, lng: 38.7630, city: "Addis Ababa" },
+    priceRange:      "free",
+    tags:            ["mass", "choir", "events"],
+    rating:          4.2,
+    popularityScore: 68,
+    isIndoor:        true,
+  },
 ];

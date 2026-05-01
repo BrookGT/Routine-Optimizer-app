@@ -32,8 +32,8 @@
  *   source            {string}  — always "google_maps"
  */
 
-import { logger }                from "../utils/logger.js";
-import { buildPlacePhotoPaths }  from "../utils/placePhotoPaths.js";
+import { logger } from "../utils/logger.js";
+import { buildPlacePhotoPaths } from "../utils/placePhotoPaths.js";
 
 const GOOGLE_API_BASE = "https://maps.googleapis.com/maps/api/place";
 
@@ -47,7 +47,21 @@ const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
  * Google Place types to issue one Nearby Search call per entry.
  * Results from all calls are merged and deduplicated by place_id.
  */
-const QUERY_TYPES = ["gym", "cafe", "restaurant", "bar", "park", "library", "night_club"];
+const QUERY_TYPES = [
+  "gym", "cafe", "restaurant", "bar", "park", "library", "night_club",
+  "church", "lodging",
+];
+
+/**
+ * Google Nearby Search types issued when a Discover category chip is active
+ * (narrower queries → results match the filter).
+ */
+const DISCOVER_NEARBY_GOOGLE_TYPES = {
+  gym:       ["gym"],
+  cafe:      ["cafe", "restaurant", "bar", "bakery", "meal_takeaway", "lodging"],
+  church:    ["church", "hindu_temple", "mosque", "synagogue"],
+  workspace: ["library"],
+};
 
 /**
  * Maps a Google type string → our internal place type.
@@ -66,6 +80,11 @@ const GOOGLE_TO_INTERNAL = new Map([
   ["food",            "restaurant"],
   ["bar",             "social"],
   ["night_club",      "social"],
+  ["church",          "church"],
+  ["hindu_temple",    "church"],
+  ["mosque",          "church"],
+  ["synagogue",       "church"],
+  ["lodging",         "hotel"],
   ["park",            "park"],
   ["natural_feature", "outdoor"],
   ["campground",      "outdoor"],
@@ -146,16 +165,18 @@ const transformPlace = (raw) => {
   const userRatingsTotal = raw.user_ratings_total ?? 0;
   const priceLevel       = raw.price_level;
 
-  /** Nearby Search can include photos[] with photo_reference (limit 5 for billing/UX). */
-  const photoReferences = (raw.photos ?? [])
-    .slice(0, 5)
+  const photoRefs = (raw.photos ?? [])
     .map((p) => p.photo_reference)
-    .filter(Boolean);
-
-  const id = raw.place_id;
+    .filter(Boolean)
+    .slice(0, 8);
+  const photoReferences = photoRefs.slice(0, 5);
+  const images =
+    photoReferences.length > 0
+      ? buildPlacePhotoPaths(raw.place_id, photoReferences, { max: 5, width: 720 })
+      : [];
 
   return {
-    id,
+    id:               raw.place_id,
     name:             raw.name,
     type:             internalType,
     location:         { lat, lng, city: raw.vicinity ?? "" },
@@ -168,8 +189,7 @@ const transformPlace = (raw) => {
     trendScore:       computeTrendScore(rating, userRatingsTotal),
     userRatingsTotal,
     source:           "google_maps",
-    photoReferences,
-    images:           buildPlacePhotoPaths(id, photoReferences, 400, 5),
+    ...(photoReferences.length ? { photoReferences, images } : {}),
   };
 };
 
@@ -268,162 +288,229 @@ export const getNearbyPlaces = async (userLocation, radiusMeters = 5000) => {
   }
 };
 
+/**
+ * Nearby Search for a single Discover category (narrower result set than getNearbyPlaces).
+ *
+ * @param {{ lat: number, lng: number }} userLocation
+ * @param {number} radiusMeters
+ * @param {"gym"|"cafe"|"church"|"workspace"} discoverKey
+ * @returns {Promise<object[]>}
+ */
+export const getNearbyPlacesForDiscoverKey = async (userLocation, radiusMeters = 5000, discoverKey) => {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    logger.warn("[googlePlaces] GOOGLE_MAPS_API_KEY not set — skipping discover-key fetch");
+    return [];
+  }
+
+  const { lat, lng } = userLocation;
+  if (lat == null || lng == null) {
+    logger.warn("[googlePlaces] discover-key fetch requires lat/lng");
+    return [];
+  }
+
+  const googleTypes = DISCOVER_NEARBY_GOOGLE_TYPES[discoverKey];
+  if (!googleTypes?.length) return [];
+
+  const baseKey = `${Math.round(lat * 100) / 100}_${Math.round(lng * 100) / 100}_${Math.round(radiusMeters / 1000)}km`;
+  const cacheKey  = `${baseKey}_discover_${discoverKey}`;
+  const cached    = _cache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+    logger.debug(`[googlePlaces] Cache hit for ${cacheKey} — ${cached.places.length} place(s)`);
+    return cached.places;
+  }
+
+  logger.info(`[googlePlaces] Discover fetch key=${discoverKey} types=${googleTypes.join(",")}`);
+
+  try {
+    const batches = await Promise.allSettled(
+      googleTypes.map((t) => fetchNearby(lat, lng, radiusMeters, t, apiKey))
+    );
+
+    const seen   = new Set();
+    const places = [];
+
+    for (const result of batches) {
+      if (result.status !== "fulfilled") {
+        logger.warn("[googlePlaces] Discover type query failed:", { message: result.reason?.message });
+        continue;
+      }
+      for (const raw of result.value) {
+        if (seen.has(raw.place_id)) continue;
+        seen.add(raw.place_id);
+        const place = transformPlace(raw);
+        if (place) places.push(place);
+      }
+    }
+
+    logger.info(`[googlePlaces] Discover ${discoverKey}: ${places.length} place(s) for ${cacheKey}`);
+    _cache.set(cacheKey, { places, ts: Date.now() });
+    return places;
+  } catch (err) {
+    logger.error("[googlePlaces] Discover fetch failed:", { message: err.message });
+    return [];
+  }
+};
+
 /** Purges all cached entries (useful in tests). */
 export const invalidateGoogleCache = () => {
   _cache.clear();
   logger.info("[googlePlaces] Cache purged");
 };
 
-// ─── Place Details ─────────────────────────────────────────────────────────────
+// ─── Place Details + Photo bytes ─────────────────────────────────────────────
 
-/** Cache for Place Details responses — 30 min TTL per place_id */
-const _detailsCache  = new Map();
-const DETAILS_TTL_MS = 30 * 60 * 1000;
-
-/**
- * Fields requested from the Place Details API.
- * Kept minimal to reduce billing units (Basic + Contact + Atmosphere SKUs).
- */
-const DETAILS_FIELDS = [
+const PLACE_DETAILS_FIELDS = [
   "place_id",
   "name",
+  "geometry",
   "formatted_address",
   "formatted_phone_number",
-  "geometry",
+  "international_phone_number",
+  "opening_hours",
+  "photos",
   "rating",
   "user_ratings_total",
   "reviews",
-  "opening_hours",
-  "price_level",
   "types",
-  "photos",
   "website",
   "vicinity",
+  "price_level",
 ].join(",");
 
 /**
- * Fetches full Place Details from Google for a given place_id.
+ * Fetches Place Details and merges photo URLs (high-res for detail UI).
  *
- * @param {string} placeId — Google place_id
- * @returns {Promise<object|null>} normalised place details, or null on error / missing key
+ * @param {string} placeId
+ * @returns {Promise<object|null>}
  */
 export const getPlaceDetails = async (placeId) => {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) {
-    logger.warn("[googlePlaces] GOOGLE_MAPS_API_KEY not set — skipping Place Details fetch");
+  if (!apiKey || !placeId) {
+    logger.warn("[googlePlaces] getPlaceDetails: missing key or placeId");
     return null;
-  }
-  if (!placeId) {
-    logger.warn("[googlePlaces] getPlaceDetails called without placeId");
-    return null;
-  }
-
-  const cached = _detailsCache.get(placeId);
-  if (cached && Date.now() - cached.ts < DETAILS_TTL_MS) {
-    logger.debug(`[googlePlaces] Details cache hit for ${placeId}`);
-    return cached.data;
   }
 
   try {
     const url = new URL(`${GOOGLE_API_BASE}/details/json`);
-    url.searchParams.set("place_id", placeId);
-    url.searchParams.set("fields",   DETAILS_FIELDS);
-    url.searchParams.set("key",      apiKey);
+    url.searchParams.set("place_id", String(placeId));
+    url.searchParams.set("fields", PLACE_DETAILS_FIELDS);
+    url.searchParams.set("key", apiKey);
 
-    const res  = await fetch(url.toString());
+    const res = await fetch(url.toString());
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const json = await res.json();
-    if (json.status !== "OK") {
-      throw new Error(`${json.status}: ${json.error_message ?? ""}`);
+    if (json.status !== "OK" || !json.result) {
+      logger.warn(
+        `[googlePlaces] details status=${json.status} msg=${json.error_message ?? ""}`,
+      );
+      return null;
     }
 
-    const r = json.result;
+    const raw = json.result;
+    let base = transformPlace(raw);
 
-    // Normalise reviews (Google returns up to 5)
-    const reviews = (r.reviews ?? []).map((rv) => ({
-      author:    rv.author_name ?? "Anonymous",
-      avatar:    rv.profile_photo_url ?? null,
-      rating:    rv.rating ?? 0,
-      text:      rv.text ?? "",
-      timeAgo:   rv.relative_time_description ?? "",
-      timestamp: rv.time ?? 0,
+    if (!base) {
+      const lat = raw.geometry?.location?.lat;
+      const lng = raw.geometry?.location?.lng;
+      if (lat == null || lng == null) return null;
+      const types = raw.types ?? [];
+      base = {
+        id: raw.place_id,
+        name: raw.name ?? "Place",
+        type: resolveInternalType(types) ?? "Place",
+        location: {
+          lat,
+          lng,
+          city: raw.vicinity ?? raw.formatted_address ?? "",
+        },
+        priceRange: PRICE_LEVEL_MAP[raw.price_level ?? 2] ?? "medium",
+        tags: types.filter((t) => !GENERIC_TYPES.has(t)).slice(0, 5),
+        rating: raw.rating ?? 0,
+        popularityScore: computePopularityScore(
+          raw.rating,
+          raw.user_ratings_total ?? 0,
+        ),
+        isIndoor: !types.some((t) => OUTDOOR_TYPES.has(t)),
+        isOpen: raw.opening_hours?.open_now ?? null,
+        trendScore: computeTrendScore(
+          raw.rating,
+          raw.user_ratings_total ?? 0,
+        ),
+        userRatingsTotal: raw.user_ratings_total ?? 0,
+        source: "google_maps",
+      };
+    }
+
+    const photoRefs = (raw.photos ?? [])
+      .map((p) => p.photo_reference)
+      .filter(Boolean)
+      .slice(0, 8);
+    const photoReferences = photoRefs.slice(0, 6);
+    const images =
+      photoReferences.length > 0
+        ? buildPlacePhotoPaths(raw.place_id, photoReferences, {
+            max: 6,
+            width: 1280,
+          })
+        : [];
+
+    const googleReviews = (raw.reviews ?? []).map((r, i) => ({
+      id: `g_${r.time ?? "t"}_${i}`,
+      name: r.author_name ?? "Google Maps user",
+      rating: typeof r.rating === "number" ? r.rating : 0,
+      comment: (r.text ?? "").trim(),
+      timeAgo: r.relative_time_description ?? "",
+      profilePhotoUrl: r.profile_photo_url ?? null,
     }));
 
-    // Normalise opening hours
-    const openingHours = r.opening_hours
-      ? {
-          isOpen:       r.opening_hours.open_now ?? null,
-          weekdayText:  r.opening_hours.weekday_text ?? [],
-        }
-      : null;
-
-    // Photo references — client uses /places/:id/photo?ref=… with Bearer token
-    const photos = (r.photos ?? []).map((p) => ({
-      reference:   p.photo_reference,
-      width:       p.width,
-      height:      p.height,
-      attribution: p.html_attributions?.[0] ?? null,
-    }));
-
-    const photoRefs = photos.map((p) => p.reference).filter(Boolean);
-    const images    = buildPlacePhotoPaths(r.place_id, photoRefs, 400, 5);
-
-    const details = {
-      placeId:        r.place_id,
-      name:           r.name,
-      address:        r.formatted_address ?? r.vicinity ?? null,
-      phone:          r.formatted_phone_number ?? null,
-      website:        r.website ?? null,
-      rating:         r.rating ?? null,
-      userRatingsTotal: r.user_ratings_total ?? 0,
-      location: {
-        lat:  r.geometry?.location?.lat ?? null,
-        lng:  r.geometry?.location?.lng ?? null,
-        city: r.vicinity ?? null,
-      },
-      openingHours,
-      reviews,
-      photos,
+    return {
+      ...base,
+      photoReferences,
       images,
-      tags:           (r.types ?? []).filter((t) => !GENERIC_TYPES.has(t)).slice(0, 8),
-      priceRange:     PRICE_LEVEL_MAP[r.price_level ?? 2] ?? "medium",
-      source:         "google_maps",
+      reviews: googleReviews,
+      address: raw.formatted_address ?? base.location?.city ?? "",
+      website: raw.website ?? null,
+      phone: raw.international_phone_number ?? raw.formatted_phone_number ?? null,
+      openingHours: raw.opening_hours ?? null,
     };
-
-    logger.info(`[googlePlaces] Fetched details for ${placeId} (${details.name})`);
-    _detailsCache.set(placeId, { data: details, ts: Date.now() });
-    return details;
   } catch (err) {
-    logger.error("[googlePlaces] getPlaceDetails failed:", { placeId, message: err.message });
+    logger.error("[googlePlaces] getPlaceDetails failed:", { message: err.message });
     return null;
   }
 };
 
 /**
- * Returns a Google Place Photo URL for the given photo reference.
- * Call is server-side — the API key is never exposed to the client.
+ * Downloads a single photo from Google (follows redirect) and returns bytes.
  *
  * @param {string} photoReference
- * @param {number} [maxWidth=800]
- * @returns {Promise<string|null>} Resolved redirect URL, or null on error
+ * @param {number} [maxWidth=900]
+ * @returns {Promise<{ buffer: Buffer, contentType: string }|null>}
  */
-export const resolvePhotoUrl = async (photoReference, maxWidth = 800) => {
+export const fetchPlacePhotoFromGoogle = async (photoReference, maxWidth = 900) => {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey || !photoReference) return null;
 
   try {
     const url = new URL(`${GOOGLE_API_BASE}/photo`);
-    url.searchParams.set("photoreference", photoReference);
-    url.searchParams.set("maxwidth",       String(maxWidth));
-    url.searchParams.set("key",            apiKey);
+    url.searchParams.set("maxwidth", String(maxWidth));
+    url.searchParams.set("photo_reference", String(photoReference));
+    url.searchParams.set("key", apiKey);
 
-    // Google Places Photo endpoint returns a 302 redirect to the actual CDN URL.
-    const res = await fetch(url.toString(), { redirect: "follow" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.url;
+    const res = await fetch(url, { redirect: "follow" });
+    if (!res.ok) {
+      logger.warn(`[googlePlaces] photo HTTP ${res.status}`);
+      return null;
+    }
+
+    const arrayBuffer = await res.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const contentType = res.headers.get("content-type") || "image/jpeg";
+
+    return { buffer, contentType };
   } catch (err) {
-    logger.error("[googlePlaces] resolvePhotoUrl failed:", { message: err.message });
+    logger.warn("[googlePlaces] fetchPlacePhotoFromGoogle:", err.message);
     return null;
   }
 };
