@@ -5,8 +5,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useRef, useState } from "react";
 import HomeScreen from "../screens/HomeScreen";
 import DiscoverScreen from "../screens/DiscoverScreen";
+import EventsScreen from "../screens/EventsScreen";
 import RoutineScreen from "../screens/RoutineScreen";
-import SavedScreen from "../screens/SavedScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import { useAppTheme } from "../context/ThemeContext";
 
@@ -15,13 +15,13 @@ const Tab = createBottomTabNavigator();
 const iconMap = {
     Home: "home",
     Discover: "compass",
-    Routines: "calendar-check",
-    Saved: "bookmark",
+    Events: "calendar",
+    YourSchedule: "calendar-check",
     Profile: "person",
 };
 
 function renderTabIcon(routeName, color, size) {
-    if (routeName === "Routines") {
+    if (routeName === "YourSchedule") {
         return (
             <MaterialCommunityIcons
                 name={iconMap[routeName]}
@@ -201,8 +201,14 @@ export default function MainTabs() {
         >
             <Tab.Screen name="Home" component={HomeScreen} />
             <Tab.Screen name="Discover" component={DiscoverScreen} />
-            <Tab.Screen name="Routines" component={RoutineScreen} />
-            <Tab.Screen name="Saved" component={SavedScreen} />
+            <Tab.Screen
+                name="YourSchedule"
+                component={RoutineScreen}
+                options={{
+                    tabBarAccessibilityLabel: "Your Schedule",
+                }}
+            />
+            <Tab.Screen name="Events" component={EventsScreen} />
             <Tab.Screen name="Profile" component={ProfileScreen} />
         </Tab.Navigator>
     );

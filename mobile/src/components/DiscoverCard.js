@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
     Animated,
     Pressable,
@@ -30,14 +30,6 @@ export default function DiscoverCard({ place, onPress, onSave, onDismiss }) {
         [palette, isDark],
     );
 
-    const [thumbFailed, setThumbFailed] = useState(false);
-    const thumbPath = place?.images?.[0] ?? null;
-    const showThumb = Boolean(thumbPath) && !thumbFailed;
-
-    useEffect(() => {
-        setThumbFailed(false);
-    }, [thumbPath]);
-
     const entrance = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
@@ -66,6 +58,8 @@ export default function DiscoverCard({ place, onPress, onSave, onDismiss }) {
     const distance = place?.distance ?? "Nearby";
     const aiInsight = place?.aiInsight ?? null;
     const description = place?.description ?? "";
+
+    const thumbPath = place?.images?.[0] ?? null;
 
     // Generate a pseudo-color for the thumbnail placeholder based on place type
     const thumbColors = useMemo(() => {
@@ -119,40 +113,35 @@ export default function DiscoverCard({ place, onPress, onSave, onDismiss }) {
                     end={{ x: 1, y: 1 }}
                     style={styles.card}
                 >
-                    {/* ── Thumbnail ── */}
-                    <View style={styles.thumbnail}>
-                        {showThumb ? (
+                    {thumbPath ? (
+                        <View style={styles.thumbnail}>
                             <AuthenticatedPlacePhoto
-                                imagePath={thumbPath}
-                                style={StyleSheet.absoluteFillObject}
-                                resizeMode="cover"
-                                onError={() => setThumbFailed(true)}
+                                relativePath={thumbPath}
+                                style={styles.thumbnailImage}
                             />
-                        ) : null}
-                        {!showThumb ? (
-                            <LinearGradient
-                                colors={thumbColors}
-                                style={StyleSheet.absoluteFillObject}
-                            >
-                                <Ionicons
-                                    name={thumbIcon}
-                                    size={26}
-                                    color={palette.oceanBlue}
-                                />
-                            </LinearGradient>
-                        ) : (
-                            <LinearGradient
-                                colors={["transparent", "rgba(0,0,0,0.2)"]}
-                                style={StyleSheet.absoluteFillObject}
-                                pointerEvents="none"
+                            {score ? (
+                                <View style={styles.scorePill}>
+                                    <Text style={styles.scoreText}>{score}</Text>
+                                </View>
+                            ) : null}
+                        </View>
+                    ) : (
+                        <LinearGradient
+                            colors={thumbColors}
+                            style={styles.thumbnail}
+                        >
+                            <Ionicons
+                                name={thumbIcon}
+                                size={26}
+                                color={palette.oceanBlue}
                             />
-                        )}
-                        {score ? (
-                            <View style={styles.scorePill}>
-                                <Text style={styles.scoreText}>{score}</Text>
-                            </View>
-                        ) : null}
-                    </View>
+                            {score ? (
+                                <View style={styles.scorePill}>
+                                    <Text style={styles.scoreText}>{score}</Text>
+                                </View>
+                            ) : null}
+                        </LinearGradient>
+                    )}
 
                     {/* ── Info ── */}
                     <View style={styles.info}>
@@ -277,11 +266,14 @@ function createStyles(palette, isDark) {
             elevation: 4,
         },
         thumbnail: {
-            width: 80,
+            width: 96,
             alignItems: "center",
             justifyContent: "center",
             position: "relative",
-            overflow: "hidden",
+            backgroundColor: isDark ? "rgba(20,40,60,0.5)" : "rgba(230,240,250,0.9)",
+        },
+        thumbnailImage: {
+            ...StyleSheet.absoluteFillObject,
         },
         scorePill: {
             position: "absolute",
