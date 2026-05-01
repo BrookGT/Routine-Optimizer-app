@@ -78,10 +78,24 @@ class CandidateIn(BaseModel):
 
 
 class ContextIn(BaseModel):
-    time_of_day:    Optional[str]        = "morning"
-    session_intent: Optional[str]        = "explore"
-    recent_types:   Optional[list[str]]  = Field(default_factory=list)
-    type_affinity:  Optional[dict[str, float]] = Field(default_factory=dict)
+    time_of_day:       Optional[str]             = "morning"
+    session_intent:    Optional[str]             = "explore"
+    recent_types:      Optional[list[str]]       = Field(default_factory=list)
+    type_affinity:     Optional[dict[str, float]] = Field(default_factory=dict)
+    discover_category: Optional[str]             = None
+    # Onboarding profile signals forwarded from the backend
+    religion:          Optional[str]             = ""
+    weekend_preference: Optional[str]            = ""
+    event_interests:   Optional[list[str]]       = Field(default_factory=list)
+
+
+# Discover-tab categories → internal place_type values (matches Node catalogue).
+_DISCOVER_ALLOWED_TYPES: dict[str, frozenset[str]] = {
+    "gym": frozenset({"gym", "yoga"}),
+    "cafe": frozenset({"coffee", "restaurant", "social", "hotel"}),
+    "church": frozenset({"church"}),
+    "workspace": frozenset({"study", "hotel", "coffee"}),
+}
 
 
 class PredictRequest(BaseModel):
@@ -144,6 +158,30 @@ def _score_candidate(
             config.SEQUENCE_WEIGHT * s_score +
             config.EMBEDDING_WEIGHT * e_score
         )
+        # Discover filter: slight emphasis when backend passes discover_category.
+        dc = (context.discover_category or "").strip().lower()
+        allowed = _DISCOVER_ALLOWED_TYPES.get(dc)
+        if allowed is not None:
+            if candidate.place_type in allowed:
+                ai = min(1.0, ai + 0.04)
+            else:
+                ai = max(0.0, ai - 0.08)
+
+        # Religion-based place type boost
+        religion = (context.religion or "").lower()
+        if religion and religion not in ("", "prefer_not_to_say"):
+            if candidate.place_type in ("church", "mosque", "worship"):
+                ai = min(1.0, ai + 0.05)
+
+        # Weekend preference boost
+        wp = (context.weekend_preference or "").lower()
+        if wp == "outdoor" and candidate.place_type in ("outdoor", "hiking", "sports", "park"):
+            ai = min(1.0, ai + 0.04)
+        elif wp == "hiking" and candidate.place_type in ("hiking", "outdoor", "park"):
+            ai = min(1.0, ai + 0.05)
+        elif wp == "indoor" and candidate.place_type in ("cinema", "museum", "art", "study", "coffee"):
+            ai = min(1.0, ai + 0.03)
+
         ai = round(max(0.0, min(1.0, ai)), 4)
 
         return RankedPlace(
