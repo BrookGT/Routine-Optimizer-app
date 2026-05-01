@@ -9,8 +9,11 @@ import ProfileSetupScreen from "../screens/ProfileSetupScreen";
 import PlaceDetailScreen from "../screens/PlaceDetailScreen";
 import ActivityRecommendationsScreen from "../screens/ActivityRecommendationsScreen";
 import TrendingScreen from "../screens/TrendingScreen";
+import EventDetailScreen from "../screens/EventDetailScreen";
 import SplashScreen from "../screens/SplashScreen";
 import RoutineBuilderScreen from "../screens/RoutineBuilderScreen";
+import SavedPlacesScreen from "../screens/SavedPlacesScreen";
+import EventsScreen from "../screens/EventsScreen";
 import MainTabs from "./MainTabs";
 import { useAppTheme } from "../context/ThemeContext";
 
@@ -172,6 +175,45 @@ export default function AppNavigator() {
             <Stack.Screen
                 name="Trending"
                 component={TrendingScreen}
+                options={{
+                    animation: Platform.select({
+                        ios: "slide_from_right",
+                        android: "slide_from_right",
+                        default: "fade",
+                    }),
+                    gestureEnabled: true,
+                    fullScreenGestureEnabled: true,
+                }}
+            />
+            <Stack.Screen
+                name="SavedPlaces"
+                component={SavedPlacesScreen}
+                options={{
+                    animation: Platform.select({
+                        ios: "slide_from_right",
+                        android: "slide_from_right",
+                        default: "fade",
+                    }),
+                    gestureEnabled: true,
+                    fullScreenGestureEnabled: true,
+                }}
+            />
+            <Stack.Screen
+                name="Events"
+                component={EventsScreen}
+                options={{
+                    animation: Platform.select({
+                        ios: "slide_from_right",
+                        android: "slide_from_right",
+                        default: "fade",
+                    }),
+                    gestureEnabled: true,
+                    fullScreenGestureEnabled: true,
+                }}
+            />
+            <Stack.Screen
+                name="EventDetail"
+                component={EventDetailScreen}
                 options={{
                     animation: Platform.select({
                         ios: "slide_from_right",

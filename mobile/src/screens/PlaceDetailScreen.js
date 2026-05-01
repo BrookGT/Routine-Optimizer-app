@@ -20,9 +20,8 @@ import { INTERACTION_TYPES } from "../utils/constants";
 import { getApiErrorMessage } from "../utils/api";
 import { enrichPlaceLocation } from "../utils/placeLocation";
 import { useAppTheme } from "../context/ThemeContext";
-import { getPlaceDetails } from "../api/placeApi";
-import { hasEmbeddedGoogleMapsSdkKey } from "../utils/mapsConfig";
 import AuthenticatedPlacePhoto from "../components/AuthenticatedPlacePhoto";
+import { fetchPlaceDetails } from "../api/placeApi";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -55,37 +54,6 @@ const AMENITY_SETS = {
     workspace: ["Free WiFi", "Standing Desks", "Meeting Rooms", "Coffee Bar", "Printing"],
     default: ["Free WiFi", "Parking", "Air Conditioned"],
 };
-
-const MOCK_REVIEWS = [
-    {
-        id: "r1",
-        name: "Sarah M.",
-        rating: 5,
-        comment: "Amazing place! Great atmosphere and friendly staff.",
-        timeAgo: "2 days ago",
-    },
-    {
-        id: "r2",
-        name: "John D.",
-        rating: 4,
-        comment: "Good value for money. Would recommend.",
-        timeAgo: "1 week ago",
-    },
-    {
-        id: "r3",
-        name: "Emma W.",
-        rating: 5,
-        comment: "Absolutely love this spot. Will definitely come back!",
-        timeAgo: "2 weeks ago",
-    },
-    {
-        id: "r4",
-        name: "Mike A.",
-        rating: 3,
-        comment: "Decent place, a bit crowded on weekends.",
-        timeAgo: "3 weeks ago",
-    },
-];
 
 function getAmenities(type = "") {
     const t = type.toLowerCase();
@@ -169,9 +137,70 @@ function Stars({ rating, size = 14 }) {
 
 // ─── Image Carousel ───────────────────────────────────────────────────────────
 
-function GradientSlide({ colors, typeIcon, isDark, idx, total }) {
-    return (
+function ImageCarousel({ place, isDark, onBack, onSave, isSaved }) {
+    const scrollRef = useRef(null);
+    const [activeIndex, setActiveIndex] = useState(0);
+    const slideGradients = useMemo(
+        () => getSlideGradients(place?.type ?? "", isDark),
+        [place?.type, isDark],
+    );
+    const typeIcon = getTypeIcon(place?.type ?? "");
+    const photoPaths =
+        Array.isArray(place?.images) && place.images.length > 0
+            ? place.images
+            : null;
+    const slideCount = photoPaths ? photoPaths.length : slideGradients.length;
+
+    const handleScroll = useCallback((e) => {
+        const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
+        setActiveIndex(idx);
+    }, []);
+
+    const renderPhotoSlide = (path, idx) => (
+        <View
+            key={`${path}-${idx}`}
+            style={[carouselStyles.slide, { width: SCREEN_W }]}
+        >
+            <AuthenticatedPlacePhoto
+                relativePath={path}
+                style={StyleSheet.absoluteFillObject}
+            />
+            <LinearGradient
+                colors={[
+                    "rgba(0,0,0,0.42)",
+                    "transparent",
+                    "rgba(0,0,0,0.5)",
+                ]}
+                locations={[0, 0.42, 1]}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={StyleSheet.absoluteFillObject}
+                pointerEvents="none"
+            />
+            <View style={carouselStyles.iconWrap}>
+                <Ionicons
+                    name={typeIcon}
+                    size={52}
+                    color="rgba(255,255,255,0.55)"
+                />
+            </View>
+            <View style={carouselStyles.slideLabel}>
+                <Text
+                    style={{
+                        color: "rgba(255,255,255,0.75)",
+                        fontSize: 10,
+                        fontWeight: "700",
+                    }}
+                >
+                    {idx + 1} / {slideCount}
+                </Text>
+            </View>
+        </View>
+    );
+
+    const renderGradientSlide = (colors, idx) => (
         <LinearGradient
+            key={idx}
             colors={colors}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -180,113 +209,51 @@ function GradientSlide({ colors, typeIcon, isDark, idx, total }) {
             <View style={carouselStyles.grid} pointerEvents="none">
                 {[60, 130, 200].map((x) => (
                     <View
-                        key={`gx-${x}`}
-                        style={[carouselStyles.gridLine, { left: x, top: 0, bottom: 0, width: 1 }]}
+                        key={x}
+                        style={[
+                            carouselStyles.gridLine,
+                            { left: x, top: 0, bottom: 0, width: 1 },
+                        ]}
                     />
                 ))}
                 {[60, 130, 200].map((y) => (
                     <View
-                        key={`gy-${y}`}
-                        style={[carouselStyles.gridLine, { top: y, left: 0, right: 0, height: 1 }]}
+                        key={y}
+                        style={[
+                            carouselStyles.gridLine,
+                            { top: y, left: 0, right: 0, height: 1 },
+                        ]}
                     />
                 ))}
             </View>
+
             <View style={carouselStyles.iconWrap}>
                 <Ionicons
                     name={typeIcon}
                     size={52}
-                    color={isDark ? "rgba(140,210,255,0.5)" : "rgba(30,110,190,0.35)"}
+                    color={
+                        isDark
+                            ? "rgba(140,210,255,0.5)"
+                            : "rgba(30,110,190,0.35)"
+                    }
                 />
             </View>
+
             <View style={carouselStyles.slideLabel}>
-                <Text style={{ color: isDark ? "rgba(200,235,255,0.6)" : "rgba(20,80,140,0.5)", fontSize: 10, fontWeight: "700" }}>
-                    {idx + 1} / {total}
+                <Text
+                    style={{
+                        color: isDark
+                            ? "rgba(200,235,255,0.6)"
+                            : "rgba(20,80,140,0.5)",
+                        fontSize: 10,
+                        fontWeight: "700",
+                    }}
+                >
+                    {idx + 1} / {slideCount}
                 </Text>
             </View>
         </LinearGradient>
     );
-}
-
-function CarouselPhotoSlide({
-    imagePath,
-    idx,
-    slideCount,
-    isDark,
-    slideGradients,
-    typeIcon,
-}) {
-    const [failed, setFailed] = useState(false);
-    const colors = slideGradients[idx % slideGradients.length] ?? slideGradients[0];
-
-    if (!imagePath || failed) {
-        return (
-            <GradientSlide
-                colors={colors}
-                typeIcon={typeIcon}
-                isDark={isDark}
-                idx={idx}
-                total={slideCount}
-            />
-        );
-    }
-
-    return (
-        <View style={[carouselStyles.slide, { width: SCREEN_W }]}>
-            <AuthenticatedPlacePhoto
-                imagePath={imagePath}
-                style={StyleSheet.absoluteFillObject}
-                resizeMode="cover"
-                onError={() => setFailed(true)}
-            />
-            <LinearGradient
-                colors={["transparent", "rgba(0,0,0,0.35)"]}
-                style={StyleSheet.absoluteFillObject}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 0, y: 1 }}
-                pointerEvents="none"
-            />
-            <View style={carouselStyles.slideLabel}>
-                <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 10, fontWeight: "700" }}>
-                    {idx + 1} / {slideCount}
-                </Text>
-            </View>
-        </View>
-    );
-}
-
-function ImageCarousel({ place, details, palette, isDark, onBack, onSave, isSaved }) {
-    const scrollRef = useRef(null);
-    const [activeIndex, setActiveIndex] = useState(0);
-    const slideGradients = useMemo(
-        () => getSlideGradients(place?.type ?? "", isDark),
-        [place?.type, isDark],
-    );
-    const typeIcon = getTypeIcon(place?.type ?? "");
-
-    // Authenticated API paths `/places/:id/photo?ref=...` (same as recommendation `images`)
-    const photoPaths = useMemo(() => {
-        if (Array.isArray(details?.images) && details.images.length) {
-            return details.images.slice(0, 5);
-        }
-        if (Array.isArray(place?.images) && place.images.length) {
-            return place.images.slice(0, 5);
-        }
-        const photos = details?.photos ?? [];
-        const placeId = place?.placeId ?? place?.id ?? "";
-        if (!placeId || !photos.length) return [];
-        return photos.slice(0, 5).map(
-            (p) =>
-                `/places/${encodeURIComponent(placeId)}/photo?ref=${encodeURIComponent(p.reference)}&w=800`,
-        );
-    }, [details?.images, details?.photos, place?.images, place?.placeId, place?.id]);
-
-    const hasPhotos = photoPaths.length > 0;
-    const slideCount = hasPhotos ? photoPaths.length : slideGradients.length;
-
-    const handleScroll = useCallback((e) => {
-        const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
-        setActiveIndex(idx);
-    }, []);
 
     return (
         <View style={carouselStyles.container}>
@@ -298,31 +265,11 @@ function ImageCarousel({ place, details, palette, isDark, onBack, onSave, isSave
                 onMomentumScrollEnd={handleScroll}
                 scrollEventThrottle={16}
             >
-                {hasPhotos
-                    ? photoPaths.map((path, idx) => (
-                        <CarouselPhotoSlide
-                            key={`${path}-${idx}`}
-                            imagePath={path}
-                            idx={idx}
-                            slideCount={slideCount}
-                            isDark={isDark}
-                            slideGradients={slideGradients}
-                            typeIcon={typeIcon}
-                        />
-                    ))
-                    : null}
-                {hasPhotos
-                    ? null
-                    : slideGradients.map((colors, idx) => (
-                        <GradientSlide
-                            key={idx}
-                            colors={colors}
-                            typeIcon={typeIcon}
-                            isDark={isDark}
-                            idx={idx}
-                            total={slideCount}
-                        />
-                    ))}
+                {photoPaths
+                    ? photoPaths.map((path, idx) => renderPhotoSlide(path, idx))
+                    : slideGradients.map((colors, idx) =>
+                          renderGradientSlide(colors, idx),
+                      )}
             </ScrollView>
 
             {/* Dots */}
@@ -339,7 +286,11 @@ function ImageCarousel({ place, details, palette, isDark, onBack, onSave, isSave
             </View>
 
             {/* Back button */}
-            <Pressable onPress={onBack} hitSlop={12} style={carouselStyles.backBtn}>
+            <Pressable
+                onPress={onBack}
+                hitSlop={12}
+                style={carouselStyles.backBtn}
+            >
                 <Ionicons name="chevron-back" size={20} color="#fff" />
             </Pressable>
 
@@ -525,19 +476,12 @@ const tabStyles = StyleSheet.create({
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ place, details, palette, isDark, styles }) {
-    // Prefer Google details; fall back to local place object or static defaults
-    const tags = details?.tags?.length
-        ? details.tags
-        : (place?.tags?.length ? place.tags : getAmenities(place?.type ?? ""));
-
-    const phone   = details?.phone   ?? null;
-    const website = details?.website ?? null;
-    const address = details?.address ?? place?.addressLine ?? "Addis Ababa, Ethiopia";
-    const weekdayHours = details?.openingHours?.weekdayText ?? [];
-    const hoursDisplay = weekdayHours.length
-        ? weekdayHours[0]
-        : (place?.hoursDisplay ?? "Mon–Sun · 9:00 — 22:00");
+function OverviewTab({ place, palette, isDark, styles }) {
+    const amenities = useMemo(() => getAmenities(place?.type ?? ""), [place?.type]);
+    const contactPhone = useMemo(() => {
+        const h = hashString(place?.placeId ?? "x");
+        return `+251 9${10 + (h % 80)} ${100 + (h % 900)} ${1000 + (h % 9000)}`.replace(/\s/g, " ");
+    }, [place?.placeId]);
 
     return (
         <View style={styles.tabContent}>
@@ -550,13 +494,11 @@ function OverviewTab({ place, details, palette, isDark, styles }) {
                 </Text>
             </View>
 
-            {/* Tags / Amenities */}
+            {/* Amenities */}
             <View style={styles.section}>
-                <Text style={styles.sectionTitle}>
-                    {details ? "Tags" : "Amenities"}
-                </Text>
+                <Text style={styles.sectionTitle}>Amenities</Text>
                 <View style={styles.chipRow}>
-                    {tags.map((a) => (
+                    {amenities.map((a) => (
                         <View
                             key={a}
                             style={[
@@ -577,7 +519,7 @@ function OverviewTab({ place, details, palette, isDark, styles }) {
                                     { color: palette.textSecondary },
                                 ]}
                             >
-                                {a.replace(/_/g, " ")}
+                                {a}
                             </Text>
                         </View>
                     ))}
@@ -587,69 +529,37 @@ function OverviewTab({ place, details, palette, isDark, styles }) {
             {/* Contact */}
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Contact</Text>
-
-                {phone ? (
-                    <Pressable
-                        style={styles.contactRow}
-                        onPress={() =>
-                            Linking.openURL(`tel:${phone}`).catch(() => null)
-                        }
+                <Pressable
+                    style={styles.contactRow}
+                    onPress={() =>
+                        Linking.openURL(`tel:${contactPhone}`).catch(() => null)
+                    }
+                >
+                    <View
+                        style={[
+                            styles.contactIconBox,
+                            { backgroundColor: isDark ? "rgba(20,55,95,0.8)" : "rgba(220,242,255,0.9)" },
+                        ]}
                     >
-                        <View
-                            style={[
-                                styles.contactIconBox,
-                                { backgroundColor: isDark ? "rgba(20,55,95,0.8)" : "rgba(220,242,255,0.9)" },
-                            ]}
-                        >
-                            <Ionicons
-                                name="call-outline"
-                                size={16}
-                                color={palette.oceanBlue}
-                            />
-                        </View>
-                        <Text style={[styles.contactText, { color: palette.textPrimary }]}>
-                            {phone}
-                        </Text>
                         <Ionicons
-                            name="chevron-forward"
-                            size={14}
-                            color={palette.textMuted}
+                            name="call-outline"
+                            size={16}
+                            color={palette.oceanBlue}
                         />
-                    </Pressable>
-                ) : null}
+                    </View>
+                    <Text style={[styles.contactText, { color: palette.textPrimary }]}>
+                        {contactPhone}
+                    </Text>
+                    <Ionicons
+                        name="chevron-forward"
+                        size={14}
+                        color={palette.textMuted}
+                    />
+                </Pressable>
 
-                {website ? (
-                    <Pressable
-                        style={[styles.contactRow, { marginTop: phone ? 8 : 0 }]}
-                        onPress={() => Linking.openURL(website).catch(() => null)}
-                    >
-                        <View
-                            style={[
-                                styles.contactIconBox,
-                                { backgroundColor: isDark ? "rgba(20,55,95,0.8)" : "rgba(220,242,255,0.9)" },
-                            ]}
-                        >
-                            <Ionicons
-                                name="globe-outline"
-                                size={16}
-                                color={palette.oceanBlue}
-                            />
-                        </View>
-                        <Text
-                            style={[styles.contactText, { color: palette.oceanBlue, flex: 1 }]}
-                            numberOfLines={1}
-                        >
-                            {website.replace(/^https?:\/\//, "")}
-                        </Text>
-                        <Ionicons
-                            name="chevron-forward"
-                            size={14}
-                            color={palette.textMuted}
-                        />
-                    </Pressable>
-                ) : null}
-
-                <View style={[styles.contactRow, { marginTop: 8 }]}>
+                <View
+                    style={[styles.contactRow, { marginTop: 8 }]}
+                >
                     <View
                         style={[
                             styles.contactIconBox,
@@ -663,11 +573,13 @@ function OverviewTab({ place, details, palette, isDark, styles }) {
                         />
                     </View>
                     <Text style={[styles.contactText, { color: palette.textSecondary }]}>
-                        {hoursDisplay}
+                        {place?.hoursDisplay ?? "Mon–Sun · 9:00 — 22:00"}
                     </Text>
                 </View>
 
-                <View style={[styles.contactRow, { marginTop: 8 }]}>
+                <View
+                    style={[styles.contactRow, { marginTop: 8 }]}
+                >
                     <View
                         style={[
                             styles.contactIconBox,
@@ -685,9 +597,9 @@ function OverviewTab({ place, details, palette, isDark, styles }) {
                             styles.contactText,
                             { color: palette.textSecondary, flex: 1 },
                         ]}
-                        numberOfLines={2}
+                        numberOfLines={1}
                     >
-                        {address}
+                        {place?.addressLine ?? "Addis Ababa, Ethiopia"}
                     </Text>
                 </View>
             </View>
@@ -695,36 +607,51 @@ function OverviewTab({ place, details, palette, isDark, styles }) {
     );
 }
 
-// ─── Reviews Tab ──────────────────────────────────────────────────────────────
+// ─── Reviews Tab (Google Maps data only — no mock reviews) ───────────────────
 
-function ReviewsTab({ place, details, palette, isDark, styles }) {
-    // Use real Google reviews when available; fall back to static mock
-    const h = hashString(place?.placeId ?? "x");
+function ReviewsTab({ place, palette, isDark, styles, detailLoading }) {
     const reviews = useMemo(() => {
-        if (details?.reviews?.length) {
-            return details.reviews.map((r, i) => ({
-                id:      `gr-${i}`,
-                name:    r.author,
-                avatar:  r.avatar,
-                rating:  r.rating,
-                comment: r.text,
-                timeAgo: r.timeAgo,
-            }));
-        }
-        // Static fallback with hash-shifted ratings
-        return MOCK_REVIEWS.map((r, i) => ({
-            ...r,
-            rating: Math.max(
-                1,
-                Math.min(5, r.rating + (((h >> (i * 3)) & 1) === 0 ? 0 : -1)),
-            ),
-        }));
-    }, [details, h]);
+        const raw = place?.reviews;
+        return Array.isArray(raw) ? raw : [];
+    }, [place?.reviews]);
 
-    const totalCount = details?.userRatingsTotal ?? reviews.length;
-    const avgRating  = details?.rating != null
-        ? details.rating.toFixed(1)
-        : (reviews.reduce((s, r) => s + r.rating, 0) / (reviews.length || 1)).toFixed(1);
+    const isEvent = Boolean(place?.isEvent);
+    const placeIdStr = String(place?.placeId ?? place?.id ?? "");
+
+    const totalOnGoogle =
+        typeof place?.userRatingsTotal === "number" ? place.userRatingsTotal : null;
+
+    const aggregateRating = useMemo(() => {
+        const r = place?.rating;
+        if (typeof r === "number" && r > 0) return r.toFixed(1);
+        if (reviews.length === 0) return null;
+        const sum = reviews.reduce((s, x) => s + (Number(x.rating) || 0), 0);
+        return (sum / reviews.length).toFixed(1);
+    }, [place?.rating, reviews]);
+
+    const reviewCountLabel = useMemo(() => {
+        if (totalOnGoogle != null && totalOnGoogle > 0) {
+            return `${totalOnGoogle} review${totalOnGoogle !== 1 ? "s" : ""} on Google Maps`;
+        }
+        if (reviews.length > 0) {
+            return `${reviews.length} review${reviews.length !== 1 ? "s" : ""} shown`;
+        }
+        return "0 reviews";
+    }, [totalOnGoogle, reviews.length]);
+
+    const starsRounded = aggregateRating
+        ? Math.min(5, Math.max(0, Math.round(Number(aggregateRating))))
+        : 0;
+
+    const emptyMessage = useMemo(() => {
+        if (isEvent) {
+            return "No reviews for this event in the app yet. Check the organiser's page for feedback.";
+        }
+        if (totalOnGoogle != null && totalOnGoogle > 0) {
+            return "This place has reviews on Google Maps, but review text is not shown here. Open Google Maps to read them.";
+        }
+        return "No reviews for this listing yet.";
+    }, [isEvent, totalOnGoogle]);
 
     return (
         <View style={styles.tabContent}>
@@ -744,74 +671,136 @@ function ReviewsTab({ place, details, palette, isDark, styles }) {
             >
                 <View style={styles.ratingBig}>
                     <Text style={[styles.ratingBigNum, { color: palette.textPrimary }]}>
-                        {avgRating}
+                        {aggregateRating ?? "—"}
                     </Text>
-                    <Stars rating={Math.round(Number(avgRating))} size={16} />
-                    <Text style={[styles.ratingCount, { color: palette.textMuted }]}>
-                        {totalCount.toLocaleString()} review{totalCount !== 1 ? "s" : ""}
+                    <Stars rating={starsRounded} size={16} />
+                    <Text
+                        style={[styles.ratingCount, { color: palette.textMuted }]}
+                    >
+                        {reviewCountLabel}
                     </Text>
                 </View>
             </View>
 
-            {reviews.map((review) => (
-                <View
-                    key={review.id}
+            {detailLoading && placeIdStr.startsWith("ChIJ") ? (
+                <Text
                     style={[
-                        styles.reviewCard,
+                        styles.reviewEmptyHint,
+                        { color: palette.textMuted, marginTop: 16 },
+                    ]}
+                >
+                    Loading reviews…
+                </Text>
+            ) : null}
+
+            {!detailLoading && reviews.length === 0 ? (
+                <View
+                    style={[
+                        styles.reviewEmptyWrap,
                         {
                             backgroundColor: isDark
-                                ? "rgba(16,35,60,0.8)"
-                                : "rgba(255,255,255,0.92)",
+                                ? "rgba(16,35,60,0.72)"
+                                : "rgba(255,255,255,0.88)",
                             borderColor: isDark
-                                ? "rgba(80,160,255,0.16)"
+                                ? "rgba(80,160,255,0.14)"
                                 : "rgba(10,106,168,0.1)",
                         },
                     ]}
                 >
-                    <View style={styles.reviewHeader}>
-                        <View style={styles.reviewAvatar}>
-                            <Text style={styles.reviewAvatarText}>
-                                {(review.name ?? "?").charAt(0)}
-                            </Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <View style={styles.reviewNameRow}>
-                                <Text
-                                    style={[
-                                        styles.reviewName,
-                                        { color: palette.textPrimary },
-                                    ]}
-                                >
-                                    {review.name}
-                                </Text>
-                                <Text
-                                    style={[
-                                        styles.reviewTime,
-                                        { color: palette.textMuted },
-                                    ]}
-                                >
-                                    {review.timeAgo}
-                                </Text>
-                            </View>
-                            <Stars rating={review.rating} size={13} />
-                        </View>
-                    </View>
+                    <Ionicons
+                        name="chatbubbles-outline"
+                        size={28}
+                        color={palette.textMuted}
+                        style={{ marginBottom: 8 }}
+                    />
                     <Text
-                        style={[styles.reviewComment, { color: palette.textSecondary }]}
+                        style={[
+                            styles.reviewEmptyTitle,
+                            { color: palette.textSecondary },
+                        ]}
                     >
-                        {review.comment}
+                        {emptyMessage}
                     </Text>
                 </View>
-            ))}
+            ) : null}
+
+            {!detailLoading
+                ? reviews.map((review) => (
+                      <View
+                          key={review.id}
+                          style={[
+                              styles.reviewCard,
+                              {
+                                  backgroundColor: isDark
+                                      ? "rgba(16,35,60,0.8)"
+                                      : "rgba(255,255,255,0.92)",
+                                  borderColor: isDark
+                                      ? "rgba(80,160,255,0.16)"
+                                      : "rgba(10,106,168,0.1)",
+                              },
+                          ]}
+                      >
+                          <View style={styles.reviewHeader}>
+                              <View style={styles.reviewAvatar}>
+                                  <Text style={styles.reviewAvatarText}>
+                                      {(review.name || "?").charAt(0)}
+                                  </Text>
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                  <View style={styles.reviewNameRow}>
+                                      <Text
+                                          style={[
+                                              styles.reviewName,
+                                              { color: palette.textPrimary },
+                                          ]}
+                                      >
+                                          {review.name || "User"}
+                                      </Text>
+                                      <Text
+                                          style={[
+                                              styles.reviewTime,
+                                              { color: palette.textMuted },
+                                          ]}
+                                      >
+                                          {review.timeAgo || ""}
+                                      </Text>
+                                  </View>
+                                  <Stars
+                                      rating={Math.min(
+                                          5,
+                                          Math.max(
+                                              0,
+                                              Math.round(
+                                                  Number(review.rating) || 0,
+                                              ),
+                                          ),
+                                      )}
+                                      size={13}
+                                  />
+                              </View>
+                          </View>
+                          <Text
+                              style={[
+                                  styles.reviewComment,
+                                  { color: palette.textSecondary },
+                              ]}
+                          >
+                              {review.comment?.trim()
+                                  ? review.comment
+                                  : "(No written review)"}
+                          </Text>
+                      </View>
+                  ))
+                : null}
         </View>
     );
 }
 
 // ─── Map Tab ──────────────────────────────────────────────────────────────────
 
-function MapTab({ place, details, palette, isDark, styles }) {
-    const lat = details?.location?.lat ?? place?.latitude;
-    const lng = details?.location?.lng ?? place?.longitude;
+function MapTab({ place, palette, isDark, styles }) {
+    const lat = place?.latitude;
+    const lng = place?.longitude;
     const hasCoords = typeof lat === "number" && typeof lng === "number";
 
     if (!hasCoords) {
@@ -853,13 +842,9 @@ function MapTab({ place, details, palette, isDark, styles }) {
         longitudeDelta: 0.015,
     };
 
-    // Android/iOS require a native Maps SDK key baked in at build time; otherwise MapView crashes.
-    const showNativeMap =
-        Platform.OS !== "web" && hasEmbeddedGoogleMapsSdkKey();
-
     return (
         <View style={styles.tabContent}>
-            {!showNativeMap ? (
+            {Platform.OS === "web" ? (
                 <Pressable
                     style={styles.mapShell}
                     onPress={() => openMapsExternal(lat, lng, place.name)}
@@ -1002,24 +987,46 @@ export default function PlaceDetailScreen({ navigation, route }) {
     );
 
     const raw = route?.params?.place;
-    const place = useMemo(() => enrichPlaceLocation(raw ?? {}, 0), [raw]);
+    const placeId = raw?.placeId ?? raw?.id;
+
+    // Only call Places Detail API for real Google place IDs.
+    // Event IDs start with "evt_" and Firestore IDs don't come from Google.
+    const isGooglePlaceId =
+        typeof placeId === "string" &&
+        placeId.startsWith("ChIJ");
+
+    const [detailPatch, setDetailPatch] = useState(null);
+    const [detailLoading, setDetailLoading] = useState(false);
+
+    useEffect(() => {
+        setDetailPatch(null);
+        if (!placeId || !isGooglePlaceId) {
+            setDetailLoading(false);
+            return;
+        }
+        let cancelled = false;
+        setDetailLoading(true);
+        fetchPlaceDetails(String(placeId))
+            .then((d) => {
+                if (!cancelled && d && typeof d === "object") setDetailPatch(d);
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (!cancelled) setDetailLoading(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [placeId, isGooglePlaceId]);
+
+    const place = useMemo(() => {
+        const merged = { ...(raw ?? {}), ...detailPatch };
+        return enrichPlaceLocation(merged, 0);
+    }, [raw, detailPatch]);
 
     const [activeTab, setActiveTab] = useState("Overview");
     const [isSaved, setIsSaved] = useState(false);
     const saveAnim = useRef(new Animated.Value(1)).current;
-
-    // Real place details fetched from Google Places via backend
-    const [details, setDetails] = useState(null);
-
-    useEffect(() => {
-        const id = place?.placeId ?? place?.id;
-        if (!id) return;
-        getPlaceDetails(id)
-            .then((envelope) => {
-                if (envelope?.data) setDetails(envelope.data);
-            })
-            .catch(() => null); // silent — fall through to static data
-    }, [place?.placeId, place?.id]);
 
     const bottomPad = Math.max(insets.bottom, 12) + 8;
 
@@ -1056,7 +1063,9 @@ export default function PlaceDetailScreen({ navigation, route }) {
 
         await logAction(
             newSaved ? INTERACTION_TYPES.SAVE : INTERACTION_TYPES.DISMISS,
-            newSaved ? "Place saved to your collection." : null,
+            newSaved
+                ? "Place saved. Find it anytime under Profile → Saved places."
+                : null,
         );
     }
 
@@ -1100,8 +1109,6 @@ export default function PlaceDetailScreen({ navigation, route }) {
                 {/* 1. Image Carousel — idx 0 */}
                 <ImageCarousel
                     place={place}
-                    details={details}
-                    palette={palette}
                     isDark={isDark}
                     onBack={() => navigation.goBack()}
                     onSave={handleSave}
@@ -1248,7 +1255,6 @@ export default function PlaceDetailScreen({ navigation, route }) {
                     {activeTab === "Overview" && (
                         <OverviewTab
                             place={place}
-                            details={details}
                             palette={palette}
                             isDark={isDark}
                             styles={styles}
@@ -1257,16 +1263,15 @@ export default function PlaceDetailScreen({ navigation, route }) {
                     {activeTab === "Reviews" && (
                         <ReviewsTab
                             place={place}
-                            details={details}
                             palette={palette}
                             isDark={isDark}
                             styles={styles}
+                            detailLoading={detailLoading}
                         />
                     )}
                     {activeTab === "Map" && (
                         <MapTab
                             place={place}
-                            details={details}
                             palette={palette}
                             isDark={isDark}
                             styles={styles}
@@ -1555,6 +1560,24 @@ function createStyles(palette, isDark) {
         reviewComment: {
             fontSize: 13,
             lineHeight: 20,
+        },
+        reviewEmptyWrap: {
+            marginTop: 14,
+            padding: 18,
+            borderRadius: 16,
+            borderWidth: 1,
+            alignItems: "center",
+        },
+        reviewEmptyTitle: {
+            fontSize: 14,
+            lineHeight: 21,
+            textAlign: "center",
+            fontWeight: "600",
+        },
+        reviewEmptyHint: {
+            fontSize: 13,
+            lineHeight: 19,
+            textAlign: "center",
         },
 
         // Map
