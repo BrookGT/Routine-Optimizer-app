@@ -378,10 +378,13 @@ export default function DiscoverScreen({ navigation, route }) {
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
 
-    const { requestCurrentLocation, location: cachedLocation } = useLocation();
-
     const refreshTimerRef = useRef(null);
     const headerAnim = useRef(new Animated.Value(0)).current;
+    const { location: geoLocation, requestCurrentLocation } = useLocation();
+
+    useEffect(() => {
+        requestCurrentLocation();
+    }, [requestCurrentLocation]);
 
     // Header entrance animation
     useEffect(() => {
@@ -393,18 +396,23 @@ export default function DiscoverScreen({ navigation, route }) {
     }, [headerAnim]);
 
     const buildParams = useCallback(
-        (filter, coords) => {
+        (filter) => {
             const params = {};
             if (isNearbyMode) params.mode = "nearby";
-            if (filter) params.type = filter;
-            if (coords?.latitude != null) {
-                params.lat    = coords.latitude;
-                params.lng    = coords.longitude;
-                params.radius = 5;
+            if (filter) {
+                params.category = filter;
+                params.type = filter;
+            }
+            const lat = geoLocation?.coords?.latitude;
+            const lng = geoLocation?.coords?.longitude;
+            if (typeof lat === "number" && typeof lng === "number") {
+                params.lat = lat;
+                params.lng = lng;
+                params.radius = isNearbyMode ? 8 : 5;
             }
             return params;
         },
-        [isNearbyMode],
+        [isNearbyMode, geoLocation],
     );
 
     const fetchPlaces = useCallback(
@@ -413,14 +421,7 @@ export default function DiscoverScreen({ navigation, route }) {
                 setLoading(true);
                 setError("");
 
-                // For nearby mode, always request fresh location; otherwise use cached
-                let coords = cachedLocation?.coords ?? null;
-                if (isNearbyMode || !coords) {
-                    const result = await requestCurrentLocation();
-                    coords = result?.coords ?? coords;
-                }
-
-                const params = buildParams(filter, coords);
+                const params = buildParams(filter);
                 const envelope = await getRecommendations(params);
                 const { recommendations, meta } =
                     parseRecommendationsResponse(envelope);
@@ -460,14 +461,6 @@ export default function DiscoverScreen({ navigation, route }) {
         fetchPlaces(selectedFilter);
     }, [fetchPlaces, selectedFilter]);
 
-    // Re-fetch when nearby mode is activated from the HomeScreen chip
-    useEffect(() => {
-        if (routeMode) {
-            fetchPlaces(null);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [routeMode]);
-
     useEffect(() => () => clearTimeout(refreshTimerRef.current), []);
 
     const scheduleRefresh = useCallback(() => {
@@ -475,7 +468,7 @@ export default function DiscoverScreen({ navigation, route }) {
         refreshTimerRef.current = setTimeout(async () => {
             try {
                 const envelope = await getRecommendations(
-                    buildParams(selectedFilter, cachedLocation?.coords),
+                    buildParams(selectedFilter),
                 );
                 const { recommendations, meta } =
                     parseRecommendationsResponse(envelope);
@@ -530,7 +523,10 @@ export default function DiscoverScreen({ navigation, route }) {
                 actionType: INTERACTION_TYPES.SAVE,
                 metadata: { source: "discover_feed", filter: selectedFilter, place },
             });
-            Alert.alert("Saved", "Place added to your saved list.");
+            Alert.alert(
+                "Saved",
+                "Place added to your saved list. View it anytime under Profile → Saved places.",
+            );
             scheduleRefresh();
         } catch (err) {
             Alert.alert("Unable to save", getApiErrorMessage(err));
@@ -661,6 +657,41 @@ export default function DiscoverScreen({ navigation, route }) {
                         );
                     })}
                 </ScrollView>
+
+                {selectedFilter === "events" ? (
+                    <Pressable
+                        onPress={() => {
+                            const parent =
+                                typeof navigation.getParent === "function"
+                                    ? navigation.getParent()
+                                    : null;
+                            parent?.navigate?.("Events");
+                        }}
+                        style={[
+                            styles.eventsCalendarStrip,
+                            {
+                                borderColor: palette.borderStrong,
+                                backgroundColor: isDark
+                                    ? "rgba(18,38,62,0.78)"
+                                    : "rgba(255,255,255,0.85)",
+                            },
+                        ]}
+                    >
+                        <Ionicons
+                            name="calendar-outline"
+                            size={20}
+                            color={palette.oceanBlue}
+                        />
+                        <Text style={styles.eventsCalendarText}>
+                            Browse full event calendar
+                        </Text>
+                        <Ionicons
+                            name="chevron-forward"
+                            size={18}
+                            color={palette.textMuted}
+                        />
+                    </Pressable>
+                ) : null}
 
                 {/* ── Content ── */}
                 {loading && !refreshing ? (
@@ -804,7 +835,23 @@ function createStyles(palette, isDark) {
         },
         filterScroll: {
             flexGrow: 0,
+            marginBottom: 12,
+        },
+        eventsCalendarStrip: {
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
+            paddingVertical: 12,
+            paddingHorizontal: 14,
+            borderRadius: 14,
+            borderWidth: 1,
             marginBottom: 16,
+        },
+        eventsCalendarText: {
+            flex: 1,
+            color: palette.textPrimary,
+            fontSize: 14,
+            fontWeight: "700",
         },
         filterRow: {
             paddingRight: 16,
