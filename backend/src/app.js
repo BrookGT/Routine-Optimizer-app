@@ -18,6 +18,7 @@ import eventRouter from "./routes/event.routes.js";
 import devRouter from "./routes/dev.routes.js";
 import adminRouter from "./routes/admin.routes.js";
 import aiRouter from "./routes/ai.routes.js";
+import placesRouter from "./routes/places.routes.js";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler.js";
 import { initModelCache } from "./services/ai/modelService.js";
 import { logger } from "./utils/logger.js";
@@ -86,7 +87,7 @@ app.use("/api/interactions", interactionRouter);
 // Recommendation routes — personalised ranked place list under /api/recommendations
 app.use("/api/recommendations", recommendationRouter);
 
-// Places routes — full place details + photo proxy under /api/places
+// Places — Google-backed details + photo proxy under /api/places
 app.use("/api/places", placesRouter);
 
 // Events routes — scraped Ethiopian events under /api/events

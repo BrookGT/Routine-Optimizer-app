@@ -22,6 +22,11 @@
  *     weeklyActivities   {string[]}       — e.g. gym, work, study
  *     mealPreferences    {string[]}       — meal style tags
  *     weeklyBudget       {number}         — numeric weekly spend signal
+ *     workingHours       {object}         — { morning:{start,end}, afternoon:{start,end}, flexible:bool }
+ *     religion           {string}         — "protestant"|"orthodox"|"muslim"|"other"|"prefer_not_to_say"
+ *     dailyRoutine       {object}         — { morning:{activities[],breakfastType}, afternoon:{lunchTime,lunchType}, evening:{dinnerTime,dinnerType}, customActivities[] }
+ *     weekendPreference  {string}         — "indoor"|"outdoor"|"hiking"|"other"
+ *     eventInterests     {string[]}       — e.g. ["tech","religious","social"]
  *     typeAffinity       {object}         — { [placeType]: number } persistent affinity scores (v6)
  *     seenPlaces         {string[]}       — ordered list of place ids the user has engaged with
  *     embedding          {object}         — { [dimension]: float 0-1 } long-term taste vector (v9)
@@ -129,6 +134,11 @@ export const getUserByEmail = async (email) => {
  *   weeklyActivities   {string[]}
  *   mealPreferences    {string[]}
  *   weeklyBudget       {number}
+ *   workingHours       {object}
+ *   religion           {string}
+ *   dailyRoutine       {object}
+ *   weekendPreference  {string}
+ *   eventInterests     {string[]}
  *
  * @param {string} uid     — Firebase Auth UID (from verified token, never from body)
  * @param {object} updates — validated fields to merge

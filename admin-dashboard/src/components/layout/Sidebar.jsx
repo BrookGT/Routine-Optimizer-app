@@ -2,6 +2,7 @@ import {
   Activity,
   Brain,
   CalendarDays,
+  CalendarRange,
   FlaskConical,
   Heart,
   MessageSquareText,
@@ -33,6 +34,7 @@ const navGroups = [
   {
     label: "Manage",
     items: [
+      { to: "/events",   label: "Events",   icon: CalendarRange },
       { to: "/routines", label: "Routines", icon: CalendarDays },
       { to: "/dev-tools", label: "Dev Tools", icon: Wrench },
     ],

@@ -7,6 +7,8 @@ export const endpoints = {
 	recommendations: "/recommendations",
 	interactions: "/interactions",
 	routines: "/routines",
+	events: "/events",
+	eventsStats: "/events/stats",
 	experiments: "/dev/experiment-metrics",
 	devUser: "/dev/user",
 	devInteractions: "/dev/interactions",
@@ -102,6 +104,35 @@ export async function setFallbackMode(enabled) {
 	const response = await apiClient.post(endpoints.devSystemFallback, { enabled });
 	return response.data;
 }
+
+// ─── Events ───────────────────────────────────────────────────────────────────
+
+export async function getAdminEvents(params = {}) {
+	const response = await apiClient.get(endpoints.events, { params });
+	return response.data;
+}
+
+export async function getEventsStats() {
+	const response = await apiClient.get(endpoints.eventsStats);
+	return response.data;
+}
+
+export async function updateAdminEvent(id, updates) {
+	const response = await apiClient.patch(`${endpoints.events}/${id}`, updates);
+	return response.data;
+}
+
+export async function deleteAdminEvent(id) {
+	const response = await apiClient.delete(`${endpoints.events}/${id}`);
+	return response.data;
+}
+
+export async function setEventFeatured(id, featured) {
+	const response = await apiClient.patch(`${endpoints.events}/${id}/featured`, { featured });
+	return response.data;
+}
+
+// ─── Dev ──────────────────────────────────────────────────────────────────────
 
 export async function runSeed() {
 	if (!import.meta.env.DEV) {

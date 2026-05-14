@@ -167,6 +167,7 @@ const AI_SERVICE_TIMEOUT = parseInt(process.env.AI_SERVICE_TIMEOUT_MS || "800", 
  * @param {object}   context    — {timeOfDay, …}
  * @param {object[]} recentActions — session actions [{type, …}]
  * @param {object}   typeAffinity — user.typeAffinity map
+ * @param {object}   [userProfile={}] — full user profile for onboarding signal forwarding
  * @returns {Promise<Map<string, number>>}
  */
 /**
@@ -1858,10 +1859,13 @@ export const getRecommendations = async (
 
     const normalizedScore = normalizeScore(rawScore);
 
-    const photoRefs = place.photoReferences ?? [];
-    const images      = Array.isArray(place.images) && place.images.length
-      ? place.images.slice(0, 5)
-      : buildPlacePhotoPaths(place.id, photoRefs, 400, 5);
+    const photoRefs = (place.photoReferences ?? []).filter(Boolean).slice(0, 5);
+    let images = [];
+    if (photoRefs.length > 0) {
+      images = buildPlacePhotoPaths(place.id, photoRefs, { max: 4, width: 800 });
+    } else if (Array.isArray(place.images) && place.images.length) {
+      images = place.images;
+    }
 
     const pricingEnabled = place._pricingEnabled === true;
     const fastPrice = pricingEnabled ? (place._fastPriceLevel || "mid") : null;
@@ -1876,7 +1880,6 @@ export const getRecommendations = async (
       type:       place.type,
       score:      normalizedScore,
       rawScore:   +rawScore.toFixed(3),
-      // Extra fields for mode-based sorting (trending / nearby)
       trendScore: place.trendScore  ?? 0,
       rating:     place.rating      ?? 3.0,
       distanceKm: place.distanceKm  ?? null,
@@ -1895,6 +1898,13 @@ export const getRecommendations = async (
       estimatedCost:    pricingEnabled ? undefined : {},
       matches:          placeMatch,
     };
+
+    if (images.length) entry.images = images;
+    if (photoRefs.length) entry.photoReferences = photoRefs;
+
+    if (typeof place.userRatingsTotal === "number") {
+      entry.userRatingsTotal = place.userRatingsTotal;
+    }
 
     if (debug) entry.scoreBreakdown = breakdown;
 
