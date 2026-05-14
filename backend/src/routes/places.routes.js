@@ -2,7 +2,7 @@
  * places.routes.js — Routes for the /api/places resource.
  *
  * Mounted at /api/places in app.js.
- * Both routes require a valid Firebase ID token.
+ * Details require auth; photo proxy is public (rate-limited) for reliable RN Image loads.
  */
 
 import { Router }              from "express";
@@ -18,7 +18,7 @@ const router = Router();
 // GET /api/places/:id — full place details (Google → Firestore fallback)
 router.get("/:id", authLimiter, authenticate, getPlaceHandler);
 
-// GET /api/places/:id/photo?ref=<ref>&w=<width> — photo proxy (key stays server-side)
-router.get("/:id/photo", authLimiter, authenticate, getPlacePhotoHandler);
+// GET /api/places/:id/photo?ref=<ref>&w=<width> — stream bytes; no auth (see controller)
+router.get("/:id/photo", authLimiter, getPlacePhotoHandler);
 
 export default router;

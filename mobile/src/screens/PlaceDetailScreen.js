@@ -19,6 +19,7 @@ import { createInteraction } from "../api/interactionApi";
 import { INTERACTION_TYPES } from "../utils/constants";
 import { getApiErrorMessage } from "../utils/api";
 import { enrichPlaceLocation } from "../utils/placeLocation";
+import { effectivePricingEnabled } from "../utils/pricingDisplay";
 import { useAppTheme } from "../context/ThemeContext";
 import AuthenticatedPlacePhoto from "../components/AuthenticatedPlacePhoto";
 import { fetchPlaceDetails } from "../api/placeApi";
@@ -102,10 +103,57 @@ function getTypeIcon(type = "") {
     return "location";
 }
 
+// ── Price helpers (use real AI-classified priceLevel + estimatedCost) ────────
+
+function _firstNumberFromRange(rangeText) {
+    if (typeof rangeText !== "string") return null;
+    const m = rangeText.match(/\d[\d,]*/);
+    if (!m) return null;
+    const n = parseInt(m[0].replace(/,/g, ""), 10);
+    return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Returns the "from X ETB" string for the bottom bar (only when pricing applies).
+ * Uses estimatedCost bands first, then tier-based typical entry points.
+ */
 function getPriceLabel(place) {
-    const h = hashString(place?.placeId ?? place?.id ?? "x");
-    const base = h % 3 === 0 ? 150 : h % 3 === 1 ? 300 : 500;
-    return `${base} ETB`;
+    if (!effectivePricingEnabled(place)) return null;
+    const cost = place?.estimatedCost;
+    if (cost && typeof cost === "object") {
+        const numbers = Object.values(cost)
+            .map(_firstNumberFromRange)
+            .filter((n) => typeof n === "number");
+        if (numbers.length > 0) {
+            const min = Math.min(...numbers);
+            return `${min} ETB`;
+        }
+    }
+
+    const tier = (place?.priceLevel || "").toLowerCase();
+    if (tier === "cheap") return "150 ETB";
+    if (tier === "mid") return "600 ETB";
+    if (tier === "expensive") return "3500 ETB";
+
+    return null;
+}
+
+function getPriceTierLabel(tier) {
+    switch ((tier || "").toLowerCase()) {
+        case "cheap":     return "Budget-friendly";
+        case "mid":       return "Mid-range";
+        case "expensive": return "Premium";
+        default:          return null;
+    }
+}
+
+function getPriceTierAccent(tier, palette) {
+    switch ((tier || "").toLowerCase()) {
+        case "cheap":     return palette.successGreen ?? "#3aa776";
+        case "mid":       return palette.oceanBlue    ?? "#0a6aa8";
+        case "expensive": return palette.dangerRed    ?? "#c25a4a";
+        default:          return palette.textMuted    ?? "#888";
+    }
 }
 
 function getCtaLabel(type = "") {
@@ -474,6 +522,70 @@ const tabStyles = StyleSheet.create({
     },
 });
 
+// ─── Match Score Banner ───────────────────────────────────────────────────────
+
+function MatchScoreBanner({ place, palette, isDark, styles }) {
+    const numericScore = useMemo(() => {
+        const s = place?.score ?? "";
+        const m = String(s).match(/(\d+)/);
+        return m ? parseInt(m[1], 10) : null;
+    }, [place?.score]);
+
+    if (!numericScore) return null;
+
+    const color =
+        numericScore >= 85 ? "#10B981" :
+        numericScore >= 70 ? "#3B82F6" :
+        "#6366F1";
+
+    const budgetMatch   = place?.matches?.budget === true   || place?.budgetFit === true;
+    const religionMatch = place?.matches?.religion === true;
+    const hasDistance   = Boolean(place?.distance);
+
+    return (
+        <View style={[
+            styles.matchBanner,
+            {
+                backgroundColor: isDark ? `${color}18` : `${color}12`,
+                borderColor: `${color}40`,
+            },
+        ]}>
+            {/* Score ring */}
+            <View style={[styles.matchRing, { borderColor: `${color}60`, backgroundColor: `${color}18` }]}>
+                <Text style={[styles.matchRingNum, { color }]}>{numericScore}</Text>
+                <Text style={[styles.matchRingPct, { color }]}>%</Text>
+            </View>
+
+            {/* Label + chips */}
+            <View style={{ flex: 1 }}>
+                <Text style={[styles.matchBannerLabel, { color: palette.textPrimary }]}>
+                    AI match score
+                </Text>
+                <View style={styles.matchBannerChips}>
+                    {budgetMatch && (
+                        <View style={[styles.matchChip, { backgroundColor: "rgba(16,185,129,0.12)", borderColor: "rgba(16,185,129,0.35)" }]}>
+                            <Ionicons name="checkmark-circle" size={10} color="#059669" />
+                            <Text style={[styles.matchChipText, { color: "#059669" }]}>Budget</Text>
+                        </View>
+                    )}
+                    {religionMatch && (
+                        <View style={[styles.matchChip, { backgroundColor: "rgba(139,92,246,0.12)", borderColor: "rgba(139,92,246,0.35)" }]}>
+                            <Ionicons name="checkmark-circle" size={10} color="#7C3AED" />
+                            <Text style={[styles.matchChipText, { color: "#7C3AED" }]}>Faith</Text>
+                        </View>
+                    )}
+                    {hasDistance && (
+                        <View style={[styles.matchChip, { backgroundColor: "rgba(59,130,246,0.12)", borderColor: "rgba(59,130,246,0.35)" }]}>
+                            <Ionicons name="location-outline" size={10} color="#2563EB" />
+                            <Text style={[styles.matchChipText, { color: "#2563EB" }]}>Near you</Text>
+                        </View>
+                    )}
+                </View>
+            </View>
+        </View>
+    );
+}
+
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 
 function OverviewTab({ place, palette, isDark, styles }) {
@@ -483,8 +595,102 @@ function OverviewTab({ place, palette, isDark, styles }) {
         return `+251 9${10 + (h % 80)} ${100 + (h % 900)} ${1000 + (h % 9000)}`.replace(/\s/g, " ");
     }, [place?.placeId]);
 
+    const showPricing       = effectivePricingEnabled(place);
+    const reason            = place?.reason || place?.aiInsight || null;
+    const priceTier         = place?.priceLevel || null;
+    const priceTierLabel    = getPriceTierLabel(priceTier);
+    const priceTierAccent   = getPriceTierAccent(priceTier, palette);
+    const estimatedCost     = (place?.estimatedCost && typeof place.estimatedCost === "object")
+        ? Object.entries(place.estimatedCost)
+        : [];
+    const budgetMatch       = showPricing ? (place?.matches?.budget ?? true) : true;
+
     return (
         <View style={styles.tabContent}>
+
+            {/* ── AI Match Score Banner (top of overview) ── */}
+            <MatchScoreBanner place={place} palette={palette} isDark={isDark} styles={styles} />
+
+            {/* ── AI Summary / Why we recommend ── */}
+            {reason ? (
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>AI summary</Text>
+                    <View
+                        style={[
+                            styles.reasonCard,
+                            {
+                                backgroundColor: isDark
+                                    ? "rgba(20,55,95,0.6)"
+                                    : "rgba(220,242,255,0.7)",
+                                borderColor: isDark
+                                    ? "rgba(100,180,255,0.22)"
+                                    : "rgba(10,106,168,0.18)",
+                            },
+                        ]}
+                    >
+                        <Ionicons
+                            name="sparkles"
+                            size={16}
+                            color={palette.oceanBlue}
+                            style={{ marginRight: 8, marginTop: 1 }}
+                        />
+                        <Text style={[styles.reasonText, { color: palette.textPrimary }]}>
+                            {reason}
+                        </Text>
+                    </View>
+                </View>
+            ) : null}
+
+            {/* Price range — only when consumer spending is relevant */}
+            {showPricing && (priceTierLabel || estimatedCost.length > 0) ? (
+            <View style={styles.section}>
+                <View style={styles.priceHeaderRow}>
+                    <Text style={styles.sectionTitle}>Price range</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        {!budgetMatch ? (
+                            <View style={[styles.priceTierPill, { backgroundColor: "#ff4d4d22", borderColor: "#ff4d4d55" }]}>
+                                <Text style={[styles.priceTierPillText, { color: "#e03030" }]}>
+                                    Above budget
+                                </Text>
+                            </View>
+                        ) : null}
+                        {priceTierLabel ? (
+                            <View
+                                style={[
+                                    styles.priceTierPill,
+                                    { backgroundColor: priceTierAccent + "22", borderColor: priceTierAccent + "55" },
+                                ]}
+                            >
+                                <Text style={[styles.priceTierPillText, { color: priceTierAccent }]}>
+                                    {priceTierLabel}
+                                </Text>
+                            </View>
+                        ) : null}
+                    </View>
+                </View>
+                {estimatedCost.length > 0 ? (
+                    <View style={styles.priceRangeList}>
+                        {estimatedCost.map(([item, range]) => (
+                            <View key={item} style={styles.priceRangeRow}>
+                                <Text style={[styles.priceRangeItem, { color: palette.textSecondary }]}>
+                                    {item.charAt(0).toUpperCase() + item.slice(1)}
+                                </Text>
+                                <Text style={[styles.priceRangeValue, { color: palette.textPrimary }]}>
+                                    {range}
+                                </Text>
+                            </View>
+                        ))}
+                    </View>
+                ) : (
+                    <Text style={[styles.bodyText, { color: palette.textMuted }]}>
+                        {priceTierLabel
+                            ? `Estimated ${priceTierLabel.toLowerCase()} pricing based on similar places in Addis Ababa.`
+                            : null}
+                    </Text>
+                )}
+            </View>
+            ) : null}
+
             {/* About */}
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>About</Text>
@@ -1095,6 +1301,13 @@ export default function PlaceDetailScreen({ navigation, route }) {
 
     const ratingDisplay = numericScore ? (numericScore / 20).toFixed(1) : null;
 
+    const showPricing = useMemo(
+        () => effectivePricingEnabled(place),
+        [place],
+    );
+
+    const priceLabelFooter = useMemo(() => getPriceLabel(place), [place]);
+
     return (
         <SafeAreaView
             style={[styles.safeArea, { backgroundColor: palette.pageTop }]}
@@ -1315,25 +1528,32 @@ export default function PlaceDetailScreen({ navigation, route }) {
 
                 {/* Price + CTA */}
                 <View style={styles.priceCtaGroup}>
-                    <View style={styles.priceWrap}>
-                        <Text
-                            style={[styles.priceFrom, { color: palette.textMuted }]}
-                        >
-                            $ From
-                        </Text>
-                        <Text
-                            style={[
-                                styles.priceValue,
-                                { color: palette.textPrimary },
-                            ]}
-                        >
-                            {getPriceLabel(place)}
-                        </Text>
-                    </View>
+                    {showPricing && priceLabelFooter ? (
+                        <View style={styles.priceWrap}>
+                            <Text
+                                style={[styles.priceFrom, { color: palette.textMuted }]}
+                            >
+                                {place?.priceLevel
+                                    ? `${(getPriceTierLabel(place.priceLevel) || "Price")} · From`
+                                    : "Est. From"}
+                            </Text>
+                            <Text
+                                style={[
+                                    styles.priceValue,
+                                    { color: palette.textPrimary },
+                                ]}
+                            >
+                                {priceLabelFooter}
+                            </Text>
+                        </View>
+                    ) : null}
 
                     <Pressable
                         onPress={handleCta}
-                        style={styles.ctaBtnWrap}
+                        style={[
+                            styles.ctaBtnWrap,
+                            !showPricing || !priceLabelFooter ? { flex: 1 } : null,
+                        ]}
                     >
                         <LinearGradient
                             colors={gradients.primaryButton}
@@ -1699,6 +1919,90 @@ function createStyles(palette, isDark) {
         priceValue: {
             fontSize: 15,
             fontWeight: "900",
+        },
+        // ── Match score banner ────────────────────────────────────────────
+        matchBanner: {
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 14,
+            marginTop: 16,
+            padding: 14,
+            borderRadius: 16,
+            borderWidth: 1,
+        },
+        matchRing: {
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            borderWidth: 2,
+            alignItems: "center",
+            justifyContent: "center",
+            flexDirection: "row",
+        },
+        matchRingNum:   { fontSize: 20, fontWeight: "900" },
+        matchRingPct:   { fontSize: 11, fontWeight: "700", alignSelf: "flex-end", marginBottom: 2 },
+        matchBannerLabel: { fontSize: 13, fontWeight: "800", marginBottom: 6 },
+        matchBannerChips: { flexDirection: "row", flexWrap: "wrap", gap: 5 },
+        matchChip: {
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 3,
+            paddingHorizontal: 8,
+            paddingVertical: 3,
+            borderRadius: 999,
+            borderWidth: 1,
+        },
+        matchChipText: { fontSize: 10, fontWeight: "700" },
+
+        // ── Why we recommend ──────────────────────────────────────────────
+        reasonCard: {
+            flexDirection: "row",
+            alignItems: "flex-start",
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+            borderWidth: 1,
+            borderRadius: 12,
+        },
+        reasonText: {
+            flex: 1,
+            fontSize: 13,
+            lineHeight: 19,
+            fontWeight: "500",
+        },
+        // ── Price range ───────────────────────────────────────────────────
+        priceHeaderRow: {
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 8,
+        },
+        priceTierPill: {
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: 999,
+            borderWidth: 1,
+        },
+        priceTierPillText: {
+            fontSize: 11,
+            fontWeight: "800",
+            letterSpacing: 0.3,
+        },
+        priceRangeList: {
+            gap: 6,
+        },
+        priceRangeRow: {
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingVertical: 4,
+        },
+        priceRangeItem: {
+            fontSize: 13,
+            fontWeight: "600",
+        },
+        priceRangeValue: {
+            fontSize: 13,
+            fontWeight: "800",
         },
         ctaBtnWrap: {
             flex: 1,

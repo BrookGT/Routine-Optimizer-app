@@ -6,11 +6,14 @@
  *   The response includes real reviews, opening hours, photos, and coordinates.
  *
  * GET /api/places/:id/photo?ref=<photoReference>&w=<maxWidth>
- *   Resolves a Google Place Photo reference to a CDN URL server-side so the
- *   API key is never exposed to the mobile client.
+ *   Streams JPEG/WebP bytes (HTTP 200) after fetching from Google server-side.
+ *   No 302 to the client — avoids React Native Image + redirect issues.
  */
 
-import { getPlaceDetails, resolvePhotoUrl }     from "../services/googlePlaces.service.js";
+import {
+  getPlaceDetails,
+  fetchPlacePhotoBuffer,
+} from "../services/googlePlaces.service.js";
 import { getPlaceById }                         from "../services/place.service.js";
 import { logger }                               from "../utils/logger.js";
 import { buildPlacePhotoPaths }                from "../utils/placePhotoPaths.js";
@@ -56,12 +59,8 @@ export const getPlaceHandler = async (req, res, next) => {
 /**
  * GET /api/places/:id/photo?ref=<photoReference>&w=<maxWidth>
  *
- * Resolves a Google Place Photo reference to its actual CDN URL and redirects
- * the client there. This keeps the Google API key server-side only.
- *
- * Query params:
- *   ref {string} — Google photo_reference string (required)
- *   w   {number} — max width in pixels (default 800, capped at 1600)
+ * Streams image bytes (200). Photo route is unauthenticated: photo_reference
+ * is an unguessable capability token; rate-limiting still applies.
  */
 export const getPlacePhotoHandler = async (req, res, next) => {
   try {
@@ -71,14 +70,15 @@ export const getPlacePhotoHandler = async (req, res, next) => {
     }
 
     const maxWidth = Math.min(1600, Math.max(100, parseInt(req.query.w ?? "800", 10) || 800));
-    const photoUrl = await resolvePhotoUrl(ref, maxWidth);
+    const result = await fetchPlacePhotoBuffer(ref, maxWidth);
 
-    if (!photoUrl) {
-      return res.status(502).json({ status: "error", message: "Could not resolve photo URL" });
+    if (!result) {
+      return res.status(502).json({ status: "error", message: "Could not load photo" });
     }
 
-    // Redirect the mobile client straight to the Google CDN image.
-    res.redirect(302, photoUrl);
+    res.setHeader("Content-Type", result.contentType);
+    res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+    return res.status(200).send(result.buffer);
   } catch (err) {
     logger.error("[places] getPlacePhotoHandler error:", { message: err.message });
     next(err);

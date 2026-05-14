@@ -5,6 +5,7 @@
  *
  *   globalLimiter  — broad IP-level cap; blocks bulk scrapers / DDoS.
  *                    Applied globally in app.js above all routes.
+ *                    Default max is higher in non-production (see DEFAULT_GLOBAL_MAX).
  *
  *   authLimiter    — tighter per-IP cap for authenticated resource-heavy routes
  *                    (recommendations, interactions, routines).
@@ -20,12 +21,14 @@
 import rateLimit from "express-rate-limit";
 
 const WINDOW_MS     = parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "900000", 10); // 15 min
-const GLOBAL_MAX    = parseInt(process.env.RATE_LIMIT_GLOBAL_MAX ?? "300",   10); // 300 req / window
+// In development, default is higher so hot reload, retries, and many /places calls do not hit 429 as easily.
+const DEFAULT_GLOBAL_MAX = process.env.NODE_ENV === "production" ? 300 : 2000;
+const GLOBAL_MAX    = parseInt(process.env.RATE_LIMIT_GLOBAL_MAX ?? String(DEFAULT_GLOBAL_MAX), 10);
 const AUTH_MAX      = parseInt(process.env.RATE_LIMIT_AUTH_MAX   ?? "60",    10); // 60 req / 1 min
 
 /**
- * Global limiter: 300 requests per 15 minutes per IP.
- * Mounted in app.js before any routes.
+ * Global limiter: default 300 req / window in production, 2000 in development
+ * (override with RATE_LIMIT_GLOBAL_MAX). Mounted in app.js before any routes.
  */
 export const globalLimiter = rateLimit({
   windowMs: WINDOW_MS,

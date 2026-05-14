@@ -29,6 +29,10 @@ import { SEED_PLACES }             from "../data/places.seed.js";
 import { updateSession }           from "./session.service.js";
 import { maybeRetrain }            from "../jobs/retrainModel.js";
 import {
+  sendInteractionFeedback,
+  sendInteractionFeedbackBatch,
+} from "./aiFeedback.service.js";
+import {
   recommendationCache,
   profileDataCache,
   derivedSignalsCache,
@@ -136,8 +140,19 @@ export const createInteraction = async (userId, placeId, actionType, metadata = 
     updateSession(userId, { placeId: effectivePlaceId, type, actionType }),
   ]);
 
-  // Fire-and-forget: check if a model retrain is due.
-  // Never awaited — failures are warned but never surface to the caller.
+  // Fire-and-forget: real-time AI bandit update on every interaction.
+  // The Python AI service updates its in-memory bandit state per call so the
+  // very next /predict request sees the new signal — no batch retrain wait.
+  sendInteractionFeedback({
+    userId,
+    placeId:   effectivePlaceId,
+    placeType: type,
+    actionType,
+  }).catch((err) =>
+    logger.warn(`[interaction] AI feedback dispatch failed: ${err.message}`),
+  );
+
+  // Fire-and-forget: check if a full model retrain is due (sequence + embeddings).
   maybeRetrain().catch((err) =>
     logger.warn(`[interaction] retrainModel check failed: ${err.message}`)
   );
@@ -208,6 +223,9 @@ export const createInteractionsBatch = async (userId, items) => {
 
   await writeBatch.commit();
 
+  /** Collected for a single batch /feedback dispatch at the end. */
+  const aiFeedbackEvents = [];
+
   for (const interaction of results) {
     const { catalogueId, type } = await resolvePlaceInfo(interaction.placeId);
     const effectivePlaceId = catalogueId ?? interaction.placeId;
@@ -215,6 +233,22 @@ export const createInteractionsBatch = async (userId, items) => {
       updateUserIntelligence(userId, type, effectivePlaceId, interaction.actionType),
       updateSession(userId, { placeId: effectivePlaceId, type, actionType: interaction.actionType }),
     ]);
+    if (type) {
+      aiFeedbackEvents.push({
+        userId,
+        placeId:    effectivePlaceId,
+        placeType:  type,
+        actionType: interaction.actionType,
+      });
+    }
+  }
+
+  // Fire-and-forget: one batched /feedback call so the bandit learns from
+  // the entire batch without N HTTP round-trips.
+  if (aiFeedbackEvents.length > 0) {
+    sendInteractionFeedbackBatch(aiFeedbackEvents).catch((err) =>
+      logger.warn(`[interaction] AI feedback batch dispatch failed: ${err.message}`),
+    );
   }
 
   maybeRetrain().catch((err) =>

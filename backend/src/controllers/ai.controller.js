@@ -1,13 +1,15 @@
 /**
- * controllers/ai.controller.js — Proxy handlers for the Python AI microservice.
+ * controllers/ai.controller.js — Proxy handlers for the Python AI microservice
+ * plus the internal AI daily schedule endpoint.
  *
- * Each handler:
+ * Each proxy handler:
  *   1. Calls the relevant AI service endpoint.
  *   2. Returns the AI service response (or a meaningful error) to the client.
  *   3. On failure, returns a graceful 503 rather than crashing.
  */
 
-import { logger } from "../utils/logger.js";
+import { logger }              from "../utils/logger.js";
+import { getAiDailySchedule }  from "../services/aiSchedule.service.js";
 
 const AI_SERVICE_URL     = process.env.AI_SERVICE_URL     || "http://localhost:8000";
 const AI_SERVICE_TIMEOUT = parseInt(process.env.AI_SERVICE_TIMEOUT_MS || "10000", 10);
@@ -164,5 +166,47 @@ export const getAiStatus = async (req, res, next) => {
       data:    null,
       message: `AI service unavailable: ${err.message}`,
     });
+  }
+};
+
+// ─── GET /api/ai/schedule ─────────────────────────────────────────────────────
+
+/**
+ * Returns a personalized AI daily schedule split into four periods
+ * (morning / afternoon / evening / night).
+ *
+ * Query params:
+ *   lat    {number} — user latitude  (enables Google Maps place sourcing)
+ *   lng    {number} — user longitude
+ *   radius {number} — search radius in km (default 5, max 50)
+ *
+ * @type {import("express").RequestHandler}
+ */
+export const getAiScheduleHandler = async (req, res, next) => {
+  try {
+    const rawLat    = parseFloat(req.query.lat);
+    const rawLng    = parseFloat(req.query.lng);
+    const rawRadius = parseFloat(req.query.radius);
+
+    const hasLocation = !isNaN(rawLat) && !isNaN(rawLng);
+    const radiusKm    = hasLocation && !isNaN(rawRadius)
+      ? Math.min(50, Math.max(1, rawRadius))
+      : 5;
+
+    const userLocation = hasLocation
+      ? { lat: rawLat, lng: rawLng, radiusMeters: radiusKm * 1000 }
+      : null;
+
+    const { schedule, meta } = await getAiDailySchedule(req.user.uid, userLocation);
+
+    return res.status(200).json({
+      success: true,
+      data:    schedule,
+      message: "AI daily schedule generated",
+      meta,
+    });
+  } catch (err) {
+    logger.error(`[ai.controller] getAiScheduleHandler error: ${err.message}`);
+    next(err);
   }
 };

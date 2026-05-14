@@ -19,6 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAppTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
 import {
     getRecommendations,
     parseRecommendationsResponse,
@@ -26,14 +27,24 @@ import {
 import { createInteraction, createInteractionsBatch } from "../api/interactionApi";
 import { INTERACTION_TYPES } from "../utils/constants";
 import { normalisePlace } from "../utils/recommendationPlaces";
+import {
+    filterDiscoverItemsByCategory,
+    filterReligiousPlacesByUserReligion,
+} from "../utils/discoverCategory";
 import { getApiErrorMessage } from "../utils/api";
 import Loader from "../components/Loader";
 import DiscoverCard from "../components/DiscoverCard";
 import useLocation from "../hooks/useLocation";
 
-// ─── Filter definitions ───────────────────────────────────────────────────────
+// ─── Filter definitions (keys must match backend `discoverCategory` + `resolveDiscoverFilter`) ──
 
 const FILTERS = [
+    {
+        key: "all",
+        label: "All",
+        iconLib: "Ionicons",
+        icon: "apps-outline",
+    },
     {
         key: "gym",
         label: "Gym",
@@ -47,16 +58,28 @@ const FILTERS = [
         icon: "cafe-outline",
     },
     {
+        key: "hotel",
+        label: "Hotel",
+        iconLib: "Ionicons",
+        icon: "bed-outline",
+    },
+    {
+        key: "sports",
+        label: "Sports",
+        iconLib: "Ionicons",
+        icon: "basketball-outline",
+    },
+    {
+        key: "event",
+        label: "Events",
+        iconLib: "Ionicons",
+        icon: "calendar-outline",
+    },
+    {
         key: "church",
         label: "Church",
         iconLib: "MaterialCommunity",
         icon: "church",
-    },
-    {
-        key: "events",
-        label: "Events",
-        iconLib: "Ionicons",
-        icon: "calendar-outline",
     },
     {
         key: "workspace",
@@ -65,6 +88,12 @@ const FILTERS = [
         icon: "briefcase-outline",
     },
 ];
+
+function discoverApiFilter(selectedFilter) {
+    return !selectedFilter || selectedFilter === "all"
+        ? null
+        : selectedFilter;
+}
 
 function FilterIcon({ lib, name, color, size }) {
     if (lib === "MaterialCommunity") {
@@ -366,12 +395,13 @@ function NearbyBanner({ palette, isDark, count }) {
 export default function DiscoverScreen({ navigation, route }) {
     const { palette, gradients, isDark } = useAppTheme();
     const styles = useMemo(() => createStyles(palette, isDark), [palette, isDark]);
+    const { profile } = useAuth();
 
     // Detect nearby mode from route params (e.g. from HomeScreen "Nearby" chip)
     const routeMode = route?.params?.mode ?? null;
     const isNearbyMode = routeMode === "nearby";
 
-    const [selectedFilter, setSelectedFilter] = useState(null);
+    const [selectedFilter, setSelectedFilter] = useState("all");
     const [places, setPlaces] = useState([]);
     const [aiMeta, setAiMeta] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -396,7 +426,8 @@ export default function DiscoverScreen({ navigation, route }) {
     }, [headerAnim]);
 
     const buildParams = useCallback(
-        (filter) => {
+        (selected) => {
+            const filter = discoverApiFilter(selected);
             const params = {};
             if (isNearbyMode) params.mode = "nearby";
             if (filter) {
@@ -432,12 +463,36 @@ export default function DiscoverScreen({ navigation, route }) {
                       )
                     : [];
 
-                setPlaces(mapped);
+                const apiFilterKey = discoverApiFilter(filter);
+                const categoryFiltered =
+                    filterDiscoverItemsByCategory(mapped, apiFilterKey);
+
+                // Defense-in-depth: apply religion sub-filter on client for cached /
+                // stale results when the user has tapped the "church" chip.
+                const userReligion = profile?.religion ?? null;
+                const clientFiltered =
+                    apiFilterKey === "church" && userReligion
+                        ? filterReligiousPlacesByUserReligion(categoryFiltered, userReligion)
+                        : categoryFiltered;
+
+                if (__DEV__) {
+                    // eslint-disable-next-line no-console
+                    console.log("Discover selected:", filter, "API category:", apiFilterKey,
+                        "religion:", userReligion);
+                    // eslint-disable-next-line no-console
+                    console.log(
+                        "Discover client-filtered:",
+                        clientFiltered.length,
+                        clientFiltered.map((p) => p.category),
+                    );
+                }
+
+                setPlaces(clientFiltered);
                 setAiMeta(meta?.ai ?? null);
 
                 // Log impressions for AI feedback
-                if (mapped.length > 0) {
-                    const impressions = mapped.slice(0, 6).map((p) => ({
+                if (clientFiltered.length > 0) {
+                    const impressions = clientFiltered.slice(0, 6).map((p) => ({
                         placeId: p.placeId,
                         actionType: INTERACTION_TYPES.VIEW,
                         metadata: {
@@ -454,7 +509,7 @@ export default function DiscoverScreen({ navigation, route }) {
                 setLoading(false);
             }
         },
-        [buildParams, isNearbyMode],
+        [buildParams, isNearbyMode, profile],
     );
 
     useEffect(() => {
@@ -477,7 +532,8 @@ export default function DiscoverScreen({ navigation, route }) {
                           normalisePlace(item, idx, meta),
                       )
                     : [];
-                setPlaces(mapped);
+                const apiFilterKey = discoverApiFilter(selectedFilter);
+                setPlaces(filterDiscoverItemsByCategory(mapped, apiFilterKey));
                 setAiMeta(meta?.ai ?? null);
             } catch {
                 // silent — keep existing list
@@ -495,7 +551,11 @@ export default function DiscoverScreen({ navigation, route }) {
     }
 
     function handleFilterPress(key) {
-        setSelectedFilter((prev) => (prev === key ? null : key));
+        if (key === "all") {
+            setSelectedFilter("all");
+            return;
+        }
+        setSelectedFilter((prev) => (prev === key ? "all" : key));
     }
 
     function handleOpenDetail(place) {
@@ -504,6 +564,20 @@ export default function DiscoverScreen({ navigation, route }) {
             actionType: INTERACTION_TYPES.CLICK,
             metadata: { source: "discover_feed", filter: selectedFilter, place },
         }).catch(() => null);
+
+        if (place?.category === "event" && place?._eventForDetail) {
+            const parentNav =
+                typeof navigation.getParent === "function"
+                    ? navigation.getParent()
+                    : null;
+            const target = parentNav?.navigate
+                ? parentNav
+                : navigation;
+            target.navigate("EventDetail", {
+                event: place._eventForDetail,
+            });
+            return;
+        }
 
         const parent =
             typeof navigation.getParent === "function"
@@ -551,11 +625,14 @@ export default function DiscoverScreen({ navigation, route }) {
 
     // ── Render ─────────────────────────────────────────────────────────────────
 
-    const sectionLabel = selectedFilter
-        ? `${FILTERS.find((f) => f.key === selectedFilter)?.label ?? selectedFilter} Near You`
-        : isNearbyMode
-          ? "Places Near You"
-          : "Near You";
+    const sectionLabel =
+        selectedFilter && selectedFilter !== "all"
+            ? `${FILTERS.find((f) => f.key === selectedFilter)?.label ?? selectedFilter} Near You`
+            : isNearbyMode
+              ? "Places Near You"
+              : "Near You";
+
+    const aiBannerFilter = discoverApiFilter(selectedFilter);
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -658,7 +735,7 @@ export default function DiscoverScreen({ navigation, route }) {
                     })}
                 </ScrollView>
 
-                {selectedFilter === "events" ? (
+                {selectedFilter === "event" ? (
                     <Pressable
                         onPress={() => {
                             const parent =
@@ -726,7 +803,7 @@ export default function DiscoverScreen({ navigation, route }) {
                                             palette={palette}
                                             isDark={isDark}
                                             count={places.length}
-                                            filter={selectedFilter}
+                                            filter={aiBannerFilter}
                                         />
                                     )
                                 )}
@@ -770,7 +847,7 @@ export default function DiscoverScreen({ navigation, route }) {
                                         No places found
                                     </Text>
                                     <Text style={styles.emptySubtitle}>
-                                        {selectedFilter
+                                        {selectedFilter && selectedFilter !== "all"
                                             ? `No ${FILTERS.find((f) => f.key === selectedFilter)?.label ?? selectedFilter} recommendations yet. Try another filter or update your profile.`
                                             : "We're still learning your taste. Update your profile to improve recommendations."}
                                     </Text>

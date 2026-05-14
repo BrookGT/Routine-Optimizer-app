@@ -1,0 +1,16 @@
+{
+  "version": "v30",
+  "versionNumber": 30,
+  "lastTrainedAt": "2026-05-14T08:05:29.221933+00:00",
+  "dataSize": 0,
+  "performanceMetrics": {
+    "bandit_arms": 8,
+    "lstm_trained": false,
+    "embedding_cache_size": {
+      "places": 0,
+      "users": 0
+    },
+    "bandit_users": 7,
+    "sequence_final_loss": null
+  }
+}

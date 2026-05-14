@@ -11,6 +11,8 @@ export async function getPlaceDetails(placeId) {
     return data;
 }
 
+export const fetchPlaceDetails = getPlaceDetails;
+
 /**
  * Returns a fully-resolved URL for a Google Place photo.
  * The backend proxies the request so the API key stays server-side.

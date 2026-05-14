@@ -19,6 +19,7 @@ import {
   triggerAiTrain,
   triggerAiReset,
   getAiStatus,
+  getAiScheduleHandler,
 }                                     from "../controllers/ai.controller.js";
 
 const router = Router();
@@ -31,5 +32,8 @@ router.post("/reset", authLimiter, authenticate, requireAdmin, triggerAiReset);
 
 // GET /api/ai/status  — read AI model status (any auth'd user)
 router.get("/status", authLimiter, authenticate, getAiStatus);
+
+// GET /api/ai/schedule — personalized AI daily schedule (any auth'd user)
+router.get("/schedule", authLimiter, authenticate, getAiScheduleHandler);
 
 export default router;

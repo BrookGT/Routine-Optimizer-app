@@ -47,31 +47,46 @@ const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
  * Google Place types to issue one Nearby Search call per entry.
  * Results from all calls are merged and deduplicated by place_id.
  */
-const QUERY_TYPES = ["gym", "cafe", "restaurant", "bar", "park", "library", "night_club"];
+const QUERY_TYPES = [
+  "gym", "cafe", "restaurant", "bar", "park", "library", "night_club",
+  "lodging", "church", "stadium", "bowling_alley", "golf_course",
+];
 
 /**
  * Maps a Google type string → our internal place type.
  * First match in a result's types array wins.
  */
 const GOOGLE_TO_INTERNAL = new Map([
-  ["gym",             "gym"],
-  ["fitness_centre",  "gym"],
-  ["yoga",            "yoga"],
-  ["spa",             "yoga"],
-  ["cafe",            "coffee"],
-  ["coffee_shop",     "coffee"],
-  ["bakery",          "coffee"],
-  ["restaurant",      "restaurant"],
-  ["meal_takeaway",   "restaurant"],
-  ["food",            "restaurant"],
-  ["bar",             "social"],
-  ["night_club",      "social"],
-  ["park",            "park"],
-  ["natural_feature", "outdoor"],
-  ["campground",      "outdoor"],
-  ["library",         "study"],
-  ["book_store",      "study"],
-  ["university",      "study"],
+  ["stadium",           "sports"],
+  ["bowling_alley",     "sports"],
+  ["golf_course",       "sports"],
+  ["sports_club",       "sports"],
+  ["ice_skating_rink",  "sports"],
+  ["tennis_court",      "sports"],
+  ["athletic_field",    "sports"],
+  ["gym",               "gym"],
+  ["fitness_centre",    "gym"],
+  ["yoga",              "yoga"],
+  ["spa",               "yoga"],
+  ["cafe",              "coffee"],
+  ["coffee_shop",       "coffee"],
+  ["bakery",            "coffee"],
+  ["restaurant",        "restaurant"],
+  ["meal_takeaway",     "restaurant"],
+  ["food",              "restaurant"],
+  ["bar",               "social"],
+  ["night_club",        "social"],
+  ["lodging",           "hotel"],
+  ["church",            "church"],
+  ["hindu_temple",      "church"],
+  ["mosque",            "church"],
+  ["synagogue",         "church"],
+  ["park",              "park"],
+  ["natural_feature",   "outdoor"],
+  ["campground",        "outdoor"],
+  ["library",           "study"],
+  ["book_store",        "study"],
+  ["university",        "study"],
 ]);
 
 /** Google types that indicate an outdoor venue (isIndoor = false). */
@@ -268,6 +283,66 @@ export const getNearbyPlaces = async (userLocation, radiusMeters = 5000) => {
   }
 };
 
+/**
+ * Narrow Nearby Search for an active Discover chip (category-specific, no mixing).
+ */
+const DISCOVER_NEARBY_GOOGLE_TYPES = {
+  gym:       ["gym"],
+  cafe:      ["cafe", "restaurant", "bakery", "meal_takeaway"],
+  hotel:     ["lodging"],
+  sports:    ["stadium", "bowling_alley", "golf_course", "sports_club"],
+  church:    ["church", "hindu_temple", "mosque", "synagogue"],
+  workspace: ["library"],
+};
+
+/**
+ * @param {{ lat: number, lng: number }} userLocation
+ * @param {number} radiusMeters
+ * @param {"gym"|"cafe"|"hotel"|"sports"|"church"} discoverKey
+ * @returns {Promise<object[]>}
+ */
+export const getNearbyPlacesForDiscoverKey = async (userLocation, radiusMeters = 5000, discoverKey) => {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return [];
+
+  const { lat, lng } = userLocation;
+  if (lat == null || lng == null) return [];
+
+  const googleTypes = DISCOVER_NEARBY_GOOGLE_TYPES[discoverKey];
+  if (!googleTypes?.length) return [];
+
+  const baseKey = `${Math.round(lat * 100) / 100}_${Math.round(lng * 100) / 100}_${Math.round(radiusMeters / 1000)}km`;
+  const cacheKey  = `${baseKey}_discover_${discoverKey}`;
+  const cached    = _cache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+    logger.debug(`[googlePlaces] discover cache hit ${cacheKey} (${cached.places.length})`);
+    return cached.places;
+  }
+
+  try {
+    const batches = await Promise.allSettled(
+      googleTypes.map((t) => fetchNearby(lat, lng, radiusMeters, t, apiKey)),
+    );
+    const seen   = new Set();
+    const places = [];
+    for (const result of batches) {
+      if (result.status !== "fulfilled") continue;
+      for (const raw of result.value) {
+        if (seen.has(raw.place_id)) continue;
+        seen.add(raw.place_id);
+        const place = transformPlace(raw);
+        if (place) places.push(place);
+      }
+    }
+    logger.info(`[googlePlaces] discover ${discoverKey}: ${places.length} places`);
+    _cache.set(cacheKey, { places, ts: Date.now() });
+    return places;
+  } catch (err) {
+    logger.error("[googlePlaces] discover fetch failed:", { message: err.message });
+    return [];
+  }
+};
+
 /** Purges all cached entries (useful in tests). */
 export const invalidateGoogleCache = () => {
   _cache.clear();
@@ -424,6 +499,36 @@ export const resolvePhotoUrl = async (photoReference, maxWidth = 800) => {
     return res.url;
   } catch (err) {
     logger.error("[googlePlaces] resolvePhotoUrl failed:", { message: err.message });
+    return null;
+  }
+};
+
+/**
+ * Fetches image bytes after following Google's redirect (for HTTP 200 proxy to mobile).
+ * React Native Image often fails on 302 + Authorization; streaming avoids that.
+ *
+ * @returns {Promise<{ buffer: Buffer, contentType: string }|null>}
+ */
+export const fetchPlacePhotoBuffer = async (photoReference, maxWidth = 800) => {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey || !photoReference) return null;
+
+  try {
+    const url = new URL(`${GOOGLE_API_BASE}/photo`);
+    url.searchParams.set("photoreference", photoReference);
+    url.searchParams.set("maxwidth", String(maxWidth));
+    url.searchParams.set("key", apiKey);
+
+    const res = await fetch(url.toString(), { redirect: "follow" });
+    if (!res.ok) {
+      logger.warn(`[googlePlaces] fetchPlacePhotoBuffer HTTP ${res.status}`);
+      return null;
+    }
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const contentType = res.headers.get("content-type") || "image/jpeg";
+    return { buffer, contentType };
+  } catch (err) {
+    logger.error("[googlePlaces] fetchPlacePhotoBuffer failed:", { message: err.message });
     return null;
   }
 };

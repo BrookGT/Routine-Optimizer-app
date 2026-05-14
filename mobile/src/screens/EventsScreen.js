@@ -20,15 +20,22 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { useAppTheme } from "../context/ThemeContext";
 import { getRecommendedEvents, getEvents } from "../api/eventsApi";
 import { getApiErrorMessage } from "../utils/api";
+import { auth } from "../config/firebase";
+import {
+    resolveEventThumbnailUri,
+    eventPlaceholderGradientColors,
+} from "../utils/eventMedia";
 
 // ─── Category filter chips ────────────────────────────────────────────────────
 
 const CATEGORIES = [
     { key: "all",       label: "All",       icon: "apps-outline" },
     { key: "music",     label: "Music",     icon: "musical-notes-outline" },
+    { key: "sports",    label: "Sports",    icon: "football-outline" },
     { key: "tech",      label: "Tech",      icon: "laptop-outline" },
     { key: "business",  label: "Business",  icon: "briefcase-outline" },
     { key: "fitness",   label: "Fitness",   icon: "barbell-outline" },
@@ -38,6 +45,21 @@ const CATEGORIES = [
     { key: "social",    label: "Social",    icon: "people-outline" },
     { key: "education", label: "Education", icon: "book-outline" },
 ];
+
+const CATEGORY_FALLBACK_ICONS = {
+    music:     "musical-notes-outline",
+    tech:      "laptop-outline",
+    business:  "briefcase-outline",
+    sports:    "football-outline",
+    fitness:   "barbell-outline",
+    church:    "heart-outline",
+    food:      "restaurant-outline",
+    art:       "color-palette-outline",
+    social:    "people-outline",
+    education: "book-outline",
+    other:     "calendar-outline",
+    sport:     "football-outline",
+};
 
 // ─── Date formatter ───────────────────────────────────────────────────────────
 
@@ -59,9 +81,41 @@ function formatEventDate(isoDate) {
 // ─── Event Card ───────────────────────────────────────────────────────────────
 
 function EventCard({ event, onPress, palette, isDark }) {
+    const resolvedHttps = useMemo(
+        () => resolveEventThumbnailUri(event),
+        [event],
+    );
+    const rawImageTrim =
+        typeof event?.image === "string" ? event.image.trim() : "";
+    const rawHttpFallback =
+        rawImageTrim.startsWith("http://") ? rawImageTrim : "";
+
+    const [tryHttpFallback, setTryHttpFallback] = useState(false);
+    const [imgFailed, setImgFailed] = useState(false);
+
+    const displayUri = tryHttpFallback && rawHttpFallback ? rawHttpFallback : resolvedHttps;
+    const showRemote = Boolean(displayUri && !imgFailed);
+
+    useEffect(() => {
+        setTryHttpFallback(false);
+        setImgFailed(false);
+    }, [event?.id, resolvedHttps]);
+
     const cardBg = isDark
         ? "rgba(14, 28, 50, 0.92)"
         : "rgba(255, 255, 255, 0.88)";
+
+    const [g0, g1] = eventPlaceholderGradientColors(event);
+    const catIcon =
+        CATEGORY_FALLBACK_ICONS[event.category] || CATEGORY_FALLBACK_ICONS.other;
+
+    const onImageError = useCallback(() => {
+        if (!tryHttpFallback && rawHttpFallback && resolvedHttps !== rawHttpFallback) {
+            setTryHttpFallback(true);
+            return;
+        }
+        setImgFailed(true);
+    }, [tryHttpFallback, rawHttpFallback, resolvedHttps]);
 
     return (
         <Pressable
@@ -76,18 +130,31 @@ function EventCard({ event, onPress, palette, isDark }) {
                 },
             ]}
         >
-            {/* Image */}
-            {event.image ? (
-                <Image
-                    source={{ uri: event.image }}
-                    style={styles.cardImage}
-                    resizeMode="cover"
-                />
-            ) : (
-                <View style={[styles.cardImagePlaceholder, { backgroundColor: palette.pageMid }]}>
-                    <Ionicons name="calendar-outline" size={36} color={palette.oceanBlue} />
-                </View>
-            )}
+            <View style={styles.cardImage}>
+                {showRemote ? (
+                    <Image
+                        source={{ uri: displayUri }}
+                        style={StyleSheet.absoluteFillObject}
+                        resizeMode="cover"
+                        onError={onImageError}
+                    />
+                ) : (
+                    <LinearGradient
+                        colors={[g0, g1]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFillObject}
+                    >
+                        <View style={styles.cardImageIconWrap}>
+                            <Ionicons
+                                name={catIcon}
+                                size={42}
+                                color="rgba(255,255,255,0.88)"
+                            />
+                        </View>
+                    </LinearGradient>
+                )}
+            </View>
 
             {/* Category badge */}
             <View style={[styles.categoryBadge, { backgroundColor: palette.oceanBlue }]}>
@@ -118,7 +185,7 @@ function EventCard({ event, onPress, palette, isDark }) {
                         style={[styles.cardMetaText, { color: palette.textMuted }]}
                         numberOfLines={1}
                     >
-                        {" "}{event.location || "Addis Ababa"}
+                        {" "}{event.location || "Ethiopia"}
                     </Text>
                 </View>
             </View>
@@ -137,22 +204,55 @@ export default function EventsScreen({ navigation }) {
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState(null);
     const [activeCategory, setActiveCategory] = useState("all");
+    const [userLocation, setUserLocation] = useState(null);
+    const [cityName, setCityName] = useState(null);
 
     const fadeAnim = useRef(new Animated.Value(0)).current;
 
-    // ── Fetch ──────────────────────────────────────────────────────────────────
+    // ── Get user location ──────────────────────────────────────────────────────
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status !== "granted") return;
+                const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                setUserLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+
+                // Reverse-geocode to get city name
+                const [place] = await Location.reverseGeocodeAsync({
+                    latitude: loc.coords.latitude,
+                    longitude: loc.coords.longitude,
+                });
+                if (place) {
+                    setCityName(place.city || place.subregion || place.region || null);
+                }
+            } catch {
+                // Location permission denied or failed — proceed without location
+            }
+        })();
+    }, []);
+
+    // ── Fetch events ───────────────────────────────────────────────────────────
 
     const fetchEvents = useCallback(async (isRefresh = false) => {
         if (!isRefresh) setLoading(true);
         setError(null);
 
         try {
-            // Personalised first; fall back to general list
             let result;
-            try {
-                result = await getRecommendedEvents();
-            } catch {
-                result = await getEvents({ limit: 50 });
+            const locationParams = userLocation
+                ? { lat: userLocation.lat, lng: userLocation.lng }
+                : {};
+
+            if (auth.currentUser) {
+                try {
+                    result = await getRecommendedEvents();
+                } catch {
+                    result = await getEvents({ limit: 50, ...locationParams });
+                }
+            } else {
+                result = await getEvents({ limit: 50, ...locationParams });
             }
 
             const list = result?.events || [];
@@ -169,7 +269,7 @@ export default function EventsScreen({ navigation }) {
             setLoading(false);
             setRefreshing(false);
         }
-    }, [fadeAnim]);
+    }, [fadeAnim, userLocation]);
 
     useEffect(() => {
         fetchEvents();
@@ -195,6 +295,13 @@ export default function EventsScreen({ navigation }) {
 
     const canGoBack = navigation.canGoBack();
 
+    // ── Header text ────────────────────────────────────────────────────────────
+
+    const headerTitle = "Events for You";
+    const headerSub = cityName
+        ? `Happening near ${cityName}`
+        : "Events happening near you";
+
     // ── Render ─────────────────────────────────────────────────────────────────
 
     return (
@@ -215,29 +322,15 @@ export default function EventsScreen({ navigation }) {
                                 accessibilityRole="button"
                                 accessibilityLabel="Go back"
                             >
-                                <Ionicons
-                                    name="arrow-back"
-                                    size={22}
-                                    color={palette.textPrimary}
-                                />
+                                <Ionicons name="arrow-back" size={22} color={palette.textPrimary} />
                             </Pressable>
                         ) : null}
                         <View style={styles2.headerTextCol}>
-                            <Text
-                                style={[
-                                    styles2.headerTitle,
-                                    { color: palette.textPrimary },
-                                ]}
-                            >
-                                Events in Addis
+                            <Text style={[styles2.headerTitle, { color: palette.textPrimary }]}>
+                                {headerTitle}
                             </Text>
-                            <Text
-                                style={[
-                                    styles2.headerSub,
-                                    { color: palette.textMuted },
-                                ]}
-                            >
-                                Real Ethiopian events, updated daily
+                            <Text style={[styles2.headerSub, { color: palette.textMuted }]}>
+                                {headerSub}
                             </Text>
                         </View>
                     </View>
@@ -259,12 +352,8 @@ export default function EventsScreen({ navigation }) {
                                 style={[
                                     styles2.chip,
                                     {
-                                        backgroundColor: active
-                                            ? palette.oceanBlue
-                                            : palette.surface,
-                                        borderColor: active
-                                            ? palette.oceanBlue
-                                            : palette.borderSoft,
+                                        backgroundColor: active ? palette.oceanBlue : palette.surface,
+                                        borderColor: active ? palette.oceanBlue : palette.borderSoft,
                                     },
                                 ]}
                             >
@@ -276,9 +365,7 @@ export default function EventsScreen({ navigation }) {
                                 <Text
                                     style={[
                                         styles2.chipText,
-                                        {
-                                            color: active ? "#fff" : palette.textSecondary,
-                                        },
+                                        { color: active ? "#fff" : palette.textSecondary },
                                     ]}
                                 >
                                     {cat.label}
@@ -293,7 +380,7 @@ export default function EventsScreen({ navigation }) {
                     <View style={styles2.centerContainer}>
                         <ActivityIndicator size="large" color={palette.oceanBlue} />
                         <Text style={[styles2.loadingText, { color: palette.textMuted }]}>
-                            Loading events…
+                            Finding events near you…
                         </Text>
                     </View>
                 ) : error ? (
@@ -350,8 +437,8 @@ export default function EventsScreen({ navigation }) {
                                     </Text>
                                     <Text style={[styles2.emptySub, { color: palette.textMuted }]}>
                                         {activeCategory !== "all"
-                                            ? `No ${activeCategory} events available right now`
-                                            : "Events will appear here once scraped"}
+                                            ? `No ${activeCategory} events right now`
+                                            : "New events are scraped daily — check back soon"}
                                     </Text>
                                 </View>
                             }
@@ -375,10 +462,10 @@ const styles = StyleSheet.create({
     cardImage: {
         width: "100%",
         height: 170,
+        backgroundColor: "rgba(0,0,0,0.15)",
     },
-    cardImagePlaceholder: {
-        width: "100%",
-        height: 170,
+    cardImageIconWrap: {
+        flex: 1,
         alignItems: "center",
         justifyContent: "center",
     },

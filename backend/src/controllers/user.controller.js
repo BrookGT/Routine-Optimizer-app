@@ -80,6 +80,17 @@ const UPDATABLE_PROFILE_FIELDS = [
     "mealPreferences",
     /** Typical weekly spend for outings (number; client may send currency-agnostic units) */
     "weeklyBudget",
+    // ── Onboarding v2 fields ──────────────────────────────────────────────────
+    /** User's religion preference — drives denomination filtering for religious venues */
+    "religion",
+    /** { morning: { start, end }, afternoon: { start, end } } — work schedule */
+    "workingHours",
+    /** Structured daily routine from the onboarding routine builder */
+    "dailyRoutine",
+    /** Weekend activity preference tags */
+    "weekendPreference",
+    /** Event category interests (music, sports, culture, etc.) */
+    "eventInterests",
 ];
 
 export const updateProfile = async (req, res, next) => {

@@ -1,4 +1,5 @@
 import { enrichPlaceLocation } from "./placeLocation";
+import { deriveDiscoverCategory } from "./discoverCategory";
 
 /**
  * Normalise recommendation API items for PlaceCard / lists.
@@ -60,10 +61,29 @@ export function normalisePlace(item, index, meta = null) {
           : [];
     const images = rawImages.filter(Boolean);
 
+    // ── AI enrichment (price + LLM reason + personalization matches) ───────
+    // These fields come from the Python AI service via the backend response.
+    const priceLevel    = item?.pricingEnabled === true ? (item?.priceLevel ?? null) : null;
+    const estimatedCost = item?.pricingEnabled === true ? (item?.estimatedCost ?? null) : null;
+    const priceCategory = item?.pricingEnabled === true ? (item?.priceCategory ?? null) : null;
+    const priceSignals  = item?.pricingEnabled === true ? (item?.priceSignals ?? null) : null;
+    const pricingEnabled = item?.pricingEnabled === true;
+    const pricingReason  = item?.pricingReason ?? null;
+    const reason        = item?.reason        ?? null;
+    const budgetFit     = typeof item?.budgetFit === "boolean" ? item.budgetFit : null;
+    const matches       = item?.matches       ?? null;   // { budget: bool, religion: bool }
+
+    const category = deriveDiscoverCategory({
+        ...item,
+        id,
+        placeId: id,
+    });
+
     const base = {
         ...item,
         id,
         placeId: id,
+        category,
         type: placeType || "Place",
         name: item?.name ?? "Recommended place",
         description:
@@ -73,6 +93,17 @@ export function normalisePlace(item, index, meta = null) {
         score,
         distance,
         aiInsight,
+        // AI enrichment fields are surfaced as first-class so PlaceDetail/PlaceCard
+        // can render them without re-checking the source object.
+        priceLevel,
+        estimatedCost,
+        priceCategory,
+        priceSignals,
+        pricingEnabled,
+        pricingReason,
+        reason,
+        budgetFit,
+        matches,
         images,
     };
 

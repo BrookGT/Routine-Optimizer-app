@@ -33,16 +33,18 @@ const STEPS = 5;
 const RELIGIONS = [
     "protestant",
     "orthodox",
+    "catholic",
     "muslim",
     "other",
     "prefer_not_to_say",
 ];
 
 const RELIGION_LABELS = {
-    protestant:       "Protestant",
-    orthodox:         "Orthodox",
-    muslim:           "Muslim",
-    other:            "Other",
+    protestant:        "Protestant",
+    orthodox:          "Orthodox",
+    catholic:          "Catholic",
+    muslim:            "Muslim",
+    other:             "Other",
     prefer_not_to_say: "Prefer not to say",
 };
 

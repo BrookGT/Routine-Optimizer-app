@@ -10,6 +10,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAppTheme } from "../context/ThemeContext";
 import AuthenticatedPlacePhoto from "./AuthenticatedPlacePhoto";
+import { effectivePricingEnabled } from "../utils/pricingDisplay";
 
 /**
  * DiscoverCard — used in the Discover tab.
@@ -52,12 +53,40 @@ export default function DiscoverCard({ place, onPress, onSave, onDismiss }) {
         ],
     };
 
-    const typeLabel = place?.type ?? "Place";
-    const nameLabel = place?.name ?? "Recommended Place";
-    const score = place?.score ?? null;
-    const distance = place?.distance ?? "Nearby";
-    const aiInsight = place?.aiInsight ?? null;
-    const description = place?.description ?? "";
+    const typeLabel = place?.eventTopic
+        ? `${String(place.eventTopic).charAt(0).toUpperCase()}${String(place.eventTopic).slice(1)}`
+        : (place?.type ?? "Place");
+    const nameLabel    = place?.name ?? "Recommended Place";
+    const score        = place?.score ?? null;
+    const distance     = place?.distance ?? "Nearby";
+    const description  = place?.description ?? "";
+
+    const showPricing = effectivePricingEnabled(place);
+
+    // ── Price ──────────────────────────────────────────────────────────────
+    const priceTier = (place?.priceLevel || "").toLowerCase();
+    const priceMeta = (() => {
+        switch (priceTier) {
+            case "cheap":     return { icon: "cash-outline",    label: "Budget",  color: palette.emerald   ?? "#3aa776" };
+            case "mid":       return { icon: "card-outline",    label: "Mid",     color: palette.oceanBlue ?? "#0a6aa8" };
+            case "expensive": return { icon: "diamond-outline", label: "Premium", color: palette.dangerRed ?? "#c25a4a" };
+            default:          return null;
+        }
+    })();
+
+    // First entry from estimatedCost (e.g. "600–1500 ETB")
+    const costText = (() => {
+        const ec = place?.estimatedCost;
+        if (ec && typeof ec === "object") {
+            const first = Object.values(ec)[0];
+            if (typeof first === "string") return first;
+        }
+        return null;
+    })();
+
+    // ── AI insight / LLM reason ────────────────────────────────────────────
+    const llmReason = place?.reason ?? null;
+    const aiInsight = llmReason ?? place?.aiInsight ?? null;
 
     const thumbPath = place?.images?.[0] ?? null;
 
@@ -69,10 +98,28 @@ export default function DiscoverCard({ place, onPress, onSave, onDismiss }) {
                 ? ["#0e2d4f", "#0b3d4a"]
                 : ["#c8e6ff", "#b8f0de"];
         }
-        if (typeLower.includes("cafe") || typeLower.includes("coffee")) {
+        if (
+            typeLower.includes("cafe") ||
+            typeLower.includes("coffee") ||
+            typeLower.includes("restaurant")
+        ) {
             return isDark
                 ? ["#2d1e0e", "#3d2910"]
                 : ["#ffe8cc", "#fff3e0"];
+        }
+        if (typeLower.includes("hotel") || typeLower.includes("lodging")) {
+            return isDark
+                ? ["#1a1528", "#221a38"]
+                : ["#ede7ff", "#f5f0ff"];
+        }
+        if (
+            typeLower.includes("sport") ||
+            typeLower.includes("stadium") ||
+            typeLower.includes("park")
+        ) {
+            return isDark
+                ? ["#0e2d1a", "#0d3d24"]
+                : ["#d4f5e0", "#e0f8e8"];
         }
         if (typeLower.includes("church") || typeLower.includes("worship")) {
             return isDark
@@ -97,7 +144,19 @@ export default function DiscoverCard({ place, onPress, onSave, onDismiss }) {
     const thumbIcon = useMemo(() => {
         const typeLower = typeLabel.toLowerCase();
         if (typeLower.includes("gym") || typeLower.includes("fitness")) return "barbell";
-        if (typeLower.includes("cafe") || typeLower.includes("coffee")) return "cafe";
+        if (
+            typeLower.includes("cafe") ||
+            typeLower.includes("coffee") ||
+            typeLower.includes("restaurant")
+        )
+            return "cafe";
+        if (typeLower.includes("hotel") || typeLower.includes("lodging")) return "bed";
+        if (
+            typeLower.includes("sport") ||
+            typeLower.includes("stadium") ||
+            typeLower.includes("park")
+        )
+            return "football";
         if (typeLower.includes("church") || typeLower.includes("worship")) return "business";
         if (typeLower.includes("event")) return "musical-notes";
         if (typeLower.includes("workspace") || typeLower.includes("office")) return "briefcase";
@@ -165,17 +224,48 @@ export default function DiscoverCard({ place, onPress, onSave, onDismiss }) {
                             </Text>
                         ) : null}
 
-                        {/* AI insight */}
+                        {/* Price tier + cost row */}
+                        {showPricing && priceMeta ? (
+                            <View style={styles.priceRow}>
+                                <View
+                                    style={[
+                                        styles.pricePill,
+                                        {
+                                            backgroundColor: priceMeta.color + "1E",
+                                            borderColor:    priceMeta.color + "55",
+                                        },
+                                    ]}
+                                >
+                                    <Ionicons
+                                        name={priceMeta.icon}
+                                        size={9}
+                                        color={priceMeta.color}
+                                    />
+                                    <Text
+                                        style={[styles.priceLabel, { color: priceMeta.color }]}
+                                    >
+                                        {priceMeta.label}
+                                    </Text>
+                                </View>
+                                {costText ? (
+                                    <Text style={[styles.costText, { color: palette.textMuted }]}>
+                                        {costText}
+                                    </Text>
+                                ) : null}
+                            </View>
+                        ) : null}
+
+                        {/* AI insight / LLM reason */}
                         {aiInsight ? (
                             <View style={styles.aiRow}>
                                 <Ionicons
-                                    name="flash"
+                                    name={llmReason ? "sparkles" : "flash"}
                                     size={9}
                                     color={palette.oceanBlue}
                                 />
                                 <Text
                                     style={styles.aiText}
-                                    numberOfLines={1}
+                                    numberOfLines={2}
                                 >
                                     {aiInsight}
                                 </Text>
@@ -323,6 +413,30 @@ function createStyles(palette, isDark) {
             lineHeight: 16,
             marginBottom: 4,
         },
+        priceRow: {
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            marginBottom: 4,
+        },
+        pricePill: {
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 3,
+            borderWidth: 1,
+            borderRadius: 6,
+            paddingHorizontal: 5,
+            paddingVertical: 2,
+        },
+        priceLabel: {
+            fontSize: 9,
+            fontWeight: "800",
+            letterSpacing: 0.2,
+        },
+        costText: {
+            fontSize: 9,
+            fontWeight: "600",
+        },
         aiRow: {
             flexDirection: "row",
             alignItems: "center",
@@ -338,6 +452,7 @@ function createStyles(palette, isDark) {
             color: palette.oceanBlue,
             fontSize: 10,
             fontWeight: "600",
+            flexShrink: 1,
         },
         footer: {
             flexDirection: "row",

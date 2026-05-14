@@ -79,6 +79,8 @@
 import { db }          from "../config/firebase.js";
 import { getUserById }  from "./user.service.js";
 import { getAllPlaces }  from "./place.service.js";
+import { getNearbyPlacesForDiscoverKey } from "./googlePlaces.service.js";
+import { getUpcomingEvents } from "./event.service.js";
 import { buildContext } from "../utils/context.js";
 import { SEED_PLACES }  from "../data/places.seed.js";
 import {
@@ -130,6 +132,14 @@ import {
 } from "../utils/experiment.js";
 import { logger } from "../utils/logger.js";
 import { buildPlacePhotoPaths } from "../utils/placePhotoPaths.js";
+import { placeMatchesDiscoverKey } from "../utils/discoverCategory.js";
+import {
+  classifyPrice,
+  tierToNumber,
+  userBudgetTier,
+  placeAllowedByReligion,
+  resolvePricingEligibility,
+} from "../utils/pricing.utils.js";
 
 const ROUTINES_COLLECTION     = "routines";
 const INTERACTIONS_COLLECTION = "interactions";
@@ -159,9 +169,68 @@ const AI_SERVICE_TIMEOUT = parseInt(process.env.AI_SERVICE_TIMEOUT_MS || "800", 
  * @param {object}   typeAffinity — user.typeAffinity map
  * @returns {Promise<Map<string, number>>}
  */
-/** @returns {{ scoreMap: Map<string,number>, predictedType: string|null, confidence: number, modelVersion: string }} */
-const callAiService = async (userId, candidates, context, recentActions, typeAffinity) => {
-  const EMPTY = { scoreMap: new Map(), predictedType: null, confidence: 0, modelVersion: "v0" };
+/**
+ * Convert the user's numeric weeklyBudget (ETB) to the standardized
+ * 'cheap | mid | expensive' tier. Mirrors AI service `budget_amount_to_tier`.
+ */
+const weeklyBudgetToTier = (amount) => {
+  if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+    return "mid";
+  }
+  if (amount <= 1500) return "cheap";
+  if (amount <= 6500) return "mid";
+  return "expensive";
+};
+
+const budgetLabelToTier = (label) => {
+  if (!label) return "mid";
+  const v = String(label).trim().toLowerCase();
+  if (["cheap", "low", "budget", "affordable"].includes(v)) return "cheap";
+  if (["mid", "medium", "moderate", "standard"].includes(v)) return "mid";
+  if (["expensive", "high", "luxury", "premium", "flexible"].includes(v)) return "expensive";
+  return "mid";
+};
+
+/**
+ * Calls /predict on the Python AI service and returns the per-place enrichment
+ * map (score + price + reason) plus model metadata.  Always resolves; never throws.
+ *
+ * @param {string} userId
+ * @param {object[]} candidates - scored place entries [{id, type, name, ...}]
+ * @param {object} context - {timeOfDay, detectedIntent, discoverCategoryKey, ...}
+ * @param {object[]} recentActions - session actions [{type, ...}]
+ * @param {object} typeAffinity - user.typeAffinity map (raw [-50,50] scale)
+ * @param {object} [profile={}] - full user profile, for onboarding signal forwarding
+ * @returns {Promise<{
+ *   scoreMap: Map<string, number>,
+ *   enrichmentMap: Map<string, {
+ *     pricingEnabled:boolean, pricingReason:string|null,
+ *     priceLevel:string|null, priceConfidence:number, priceSignals:string[],
+ *     estimatedCost:Record<string,string>, priceCategory:string,
+ *     reason:string|null, budgetFit:boolean
+ *   }>,
+ *   predictedType: string|null,
+ *   confidence: number,
+ *   modelVersion: string,
+ *   llmEnabled: boolean
+ * }>}
+ */
+const callAiService = async (
+  userId,
+  candidates,
+  context,
+  recentActions,
+  typeAffinity,
+  profile = {},
+) => {
+  const EMPTY = {
+    scoreMap:      new Map(),
+    enrichmentMap: new Map(),
+    predictedType: null,
+    confidence:    0,
+    modelVersion:  "v0",
+    llmEnabled:    false,
+  };
   if (process.env.AI_SERVICE_ENABLED === "false") return EMPTY;
   if (!candidates.length) return EMPTY;
 
@@ -177,6 +246,19 @@ const callAiService = async (userId, candidates, context, recentActions, typeAff
     normAffinity[t] = (v + AFFINITY_CAP) / (2 * AFFINITY_CAP);
   }
 
+  // Budget normalisation — prefer numeric weeklyBudget, fall back to label.
+  const budgetTier =
+    typeof profile?.weeklyBudget === "number"
+      ? weeklyBudgetToTier(profile.weeklyBudget)
+      : budgetLabelToTier(profile?.budgetRange);
+
+  // Decide whether to ask the LLM for explanations on this call.  Off by default
+  // when fastMode is on (caller already excluded fast mode here, see below),
+  // and capped by an env flag so we can turn it off in production if needed.
+  const explainEnabled =
+    process.env.AI_EXPLAIN_ENABLED !== "false" &&
+    candidates.length <= parseInt(process.env.AI_EXPLAIN_MAX_CANDIDATES || "20", 10);
+
   const payload = {
     user_id: userId,
     candidates: candidates.map((p) => ({
@@ -186,17 +268,38 @@ const callAiService = async (userId, candidates, context, recentActions, typeAff
       place_description: p.description || "",
       rating:            p.rating ?? 3.0,
       raw_score:         p.rawScore ?? 0,
+      address:            p.address  ?? p.vicinity ?? "",
+      user_ratings_total: p.userRatingsTotal ?? 0,
+      price_level:        p.googlePriceLevel ?? p.priceLevel ?? null,
+      tags:               Array.isArray(p.tags) ? p.tags : [],
+      reviews:            Array.isArray(p.reviews) ? p.reviews.slice(0, 5) : [],
     })),
     context: {
-      time_of_day:    context.timeOfDay || "morning",
-      session_intent: context.detectedIntent || "explore",
-      recent_types:   recentTypes,
-      type_affinity:  normAffinity,
+      time_of_day:        context.timeOfDay || "morning",
+      session_intent:     context.detectedIntent || "explore",
+      recent_types:       recentTypes,
+      type_affinity:      normAffinity,
+      // Onboarding signals (standardized AI input)
+      budget:             budgetTier,
+      weekly_budget:      typeof profile?.weeklyBudget === "number" ? profile.weeklyBudget : null,
+      budget_range:       profile?.budgetRange || "",
+      religion:           profile?.religion || "",
+      weekend_preference: profile?.weekendPreference || "",
+      event_interests:    Array.isArray(profile?.eventInterests) ? profile.eventInterests : [],
+      interests:          Array.isArray(profile?.interests) ? profile.interests : [],
+      explain:            explainEnabled,
+      ...(context.discoverCategoryKey
+        ? { discover_category: context.discoverCategoryKey }
+        : {}),
     },
   };
 
   const controller = new AbortController();
-  const timer      = setTimeout(() => controller.abort(), AI_SERVICE_TIMEOUT);
+  // When explanations are on we allow a slightly longer budget — LLM calls can take ~1-2s.
+  const timeoutMs = explainEnabled
+    ? Math.max(AI_SERVICE_TIMEOUT, parseInt(process.env.AI_PREDICT_EXPLAIN_TIMEOUT_MS || "3500", 10))
+    : AI_SERVICE_TIMEOUT;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch(`${AI_SERVICE_URL}/predict`, {
@@ -208,28 +311,46 @@ const callAiService = async (userId, candidates, context, recentActions, typeAff
 
     if (!res.ok) {
       logger.warn(`[AI] /predict returned HTTP ${res.status}`);
-      return new Map();
+      return EMPTY;
     }
 
     const data = await res.json();
-    const scoreMap = new Map();
+    const scoreMap      = new Map();
+    const enrichmentMap = new Map();
     for (const item of (data.ranked_places || [])) {
       scoreMap.set(item.place_id, item.ai_score);
+      const aiPricingExplicit = typeof item.pricing_enabled === "boolean";
+      const pricingEnabled = aiPricingExplicit
+        ? item.pricing_enabled === true
+        : Boolean(item.price_level);
+      enrichmentMap.set(item.place_id, {
+        pricingEnabled,
+        pricingReason: item.pricing_reason ?? null,
+        priceLevel: pricingEnabled ? (item.price_level ?? null) : null,
+        priceConfidence: item.price_confidence ?? 0,
+        priceSignals: item.price_signals ?? [],
+        estimatedCost: pricingEnabled ? (item.estimated_cost ?? {}) : {},
+        priceCategory: item.price_category ?? "dining",
+        reason: item.reason ?? null,
+        budgetFit: item.budget_fit !== false,
+      });
     }
-    logger.debug(`[AI] /predict OK — ${scoreMap.size} scores in ${data.inference_ms}ms`);
+    logger.debug(`[AI] /predict OK — ${scoreMap.size} scores in ${data.inference_ms}ms (budget=${budgetTier})`);
     return {
       scoreMap,
+      enrichmentMap,
       predictedType: data.predicted_type ?? null,
       confidence:    data.confidence    ?? 0,
       modelVersion:  data.model_version ?? "v0",
+      llmEnabled:    data.llm_enabled   ?? false,
     };
   } catch (err) {
     if (err.name === "AbortError") {
-      logger.warn(`[AI] /predict timed out after ${AI_SERVICE_TIMEOUT}ms — falling back to rawScore`);
+      logger.warn(`[AI] /predict timed out after ${timeoutMs}ms — falling back to rawScore`);
     } else {
       logger.warn(`[AI] /predict failed: ${err.message} — falling back to rawScore`);
     }
-    return { scoreMap: new Map(), predictedType: null, confidence: 0, modelVersion: "v0" };
+    return EMPTY;
   } finally {
     clearTimeout(timer);
   }
@@ -1232,6 +1353,48 @@ const scorePlacesInChunks = async (places, scoreOne) => {
   return parts.flat();
 };
 
+const mapDiscoverEventsToRecommendations = (events, lim) =>
+  events.slice(0, lim).map((ev, idx) => {
+    const raw = 62 + Math.max(0, 20 - idx * 3);
+    const eventForDetail = {
+      id:          ev.id,
+      title:       ev.title,
+      description: ev.description,
+      location:    ev.location,
+      coordinates: ev.coordinates,
+      date:        ev.date,
+      category:    ev.category,
+      image:       ev.image,
+      source_url:  ev.source_url,
+      source:      ev.source,
+    };
+    return {
+      id:          `evt_${ev.id}`,
+      name:        ev.title || "Event",
+      type:        "event",
+      category:    "event",
+      eventTopic:  ev.category || "other",
+      description: (ev.description || "").slice(0, 280),
+      summary:     ev.description || "",
+      score:       normalizeScore(raw),
+      rawScore:    raw,
+      rating:      4,
+      trendScore:  0,
+      distanceKm:  null,
+      location:
+        ev.coordinates?.lat != null && ev.coordinates?.lng != null
+          ? { lat: ev.coordinates.lat, lng: ev.coordinates.lng, city: ev.location || "" }
+          : { lat: null, lng: null, city: ev.location || "" },
+      source_url: ev.source_url || "",
+      date:       ev.date || "",
+      image:      ev.image || "",
+      images:     ev.image ? [ev.image] : [],
+      source:     ev.source || "scraped",
+      isEvent:    true,
+      _eventForDetail: eventForDetail,
+    };
+  });
+
 // ─── Main Recommendation Function ────────────────────────────────────────────
 
 /**
@@ -1263,7 +1426,16 @@ const scorePlacesInChunks = async (places, scoreOne) => {
  *
  * @throws {Error} statusCode 404 when no user profile exists
  */
-export const getRecommendations = async (userId, debug = false, limit = 10, userLocation = null, fastMode = false, typeFilter = null, modeFilter = null) => {
+export const getRecommendations = async (
+  userId,
+  debug = false,
+  limit = 10,
+  userLocation = null,
+  fastMode = false,
+  typeFilter = null,
+  modeFilter = null,
+  discoverCategoryKey = null
+) => {
   const startMs = performance.now();
   concurrentRecommendationRequests.count += 1;
 
@@ -1283,9 +1455,11 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
     ? getBlendWeightsForVariant(experimentVariant)
     : { ruleBlendWeight: WEIGHTS.ruleBlendWeight, modelBlendWeight: WEIGHTS.modelBlendWeight };
 
-  const typeFilterKey = typeFilter
-    ? (Array.isArray(typeFilter) ? typeFilter.sort().join("+") : typeFilter)
-    : "all";
+  const typeFilterKey = discoverCategoryKey
+    ? `disc:${discoverCategoryKey}`
+    : typeFilter
+      ? (Array.isArray(typeFilter) ? [...typeFilter].sort().join("+") : typeFilter)
+      : "all";
   const modeKey = modeFilter ?? "default";
 
   const recCacheKey = `rec:${userId}:${effectiveFast ? "fast" : "full"}:${locationKey}:${
@@ -1341,35 +1515,213 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
     }
   }
 
-  // Places are always fetched separately because they may be location-dependent
-  // (Google Maps) and already carry their own cache inside place.service.js /
-  // googlePlaces.service.js.
-  const places = await getAllPlaces(
-    userLocation?.lat != null ? { lat: userLocation.lat, lng: userLocation.lng } : null,
-    userLocation?.radiusMeters ?? 5000
-  );
-
-  // ── Discover filter: when a typeFilter is provided, restrict the catalogue
-  // to matching places so that the AI still ranks them by score — only the
-  // candidate pool is narrowed, not the scoring logic itself.
-  const filteredPlaces = typeFilter
-    ? places.filter((p) => {
-        const placeType = (p?.type ?? p?.category ?? "").toLowerCase();
-        const filters = Array.isArray(typeFilter)
-          ? typeFilter.map((t) => t.toLowerCase())
-          : [typeFilter.toLowerCase()];
-        return filters.some((t) => placeType.includes(t) || t.includes(placeType));
-      })
-    : places;
-
-  // Use filtered pool for scoring; fall back to full catalogue if filter
-  // yields nothing so the user never sees an empty screen due to missing data.
-  const scoringPlaces = filteredPlaces.length > 0 ? filteredPlaces : places;
-
   if (!profile) {
     const err = new Error("User profile not found");
     err.statusCode = 404;
     throw err;
+  }
+
+  // ── Discover → Events: scraped upcoming events only ─────────────────────────
+  if (discoverCategoryKey === "event") {
+    const events          = await getUpcomingEvents(Math.max(limit * 4, 40));
+    const recommendations = mapDiscoverEventsToRecommendations(events, limit);
+    const elapsedMs       = Math.round(performance.now() - startMs);
+    const m               = loadModel();
+    const meta = {
+      profileFound:       true,
+      routineCount:       routines.length,
+      interactionCount:   interactions.length,
+      topInterestType:    null,
+      placesInCatalogue:  recommendations.length,
+      detectedIntent:     null,
+      discoverCategory:   "event",
+      feedType:           "event",
+      session:            {
+        dominantSessionType: null,
+        sessionIntent:     null,
+        recentActionCount: 0,
+      },
+      longTerm:           { ...topEmbeddingEntry(profile?.embeddingSnapshot ?? null) },
+      exploration:        { explorationWeight: 0, exploitationWeight: 0, explorationActive: false },
+      ai: {
+        modelActive:     isModelLoaded(),
+        modelVersion:    m.version ?? "v1",
+        versionNumber:   m.versionNumber ?? 0,
+        lastTrainedAt:   m.trainedAt ?? null,
+        sampleCount:     m.sampleCount ?? 0,
+        predictedType:   null,
+        confidence:      0,
+        pyModelVersion:  "v0",
+        pyModelActive:   false,
+        llmEnabled:      false,
+      },
+      learning:          { recencyWeightActive: false, behaviorShiftDetected: false },
+      location:          {
+        source:            "events_firestore",
+        radiusUsed:        userLocation?.radiusMeters ?? null,
+        resultsFetched:    recommendations.length,
+        typeFilter:        null,
+        modeFilter:        modeFilter ?? null,
+        discoverCategory:  "event",
+      },
+      personalization:   { dominantHabits: [], topInterestWeights: {} },
+      experiment: experimentActive
+        ? { experimentActive: true, experimentId: EXPERIMENT_ID, variantAssigned: experimentVariant }
+        : { experimentActive: false, experimentId: null, variantAssigned: null },
+      performance: {
+        elapsedMs,
+        cacheHit:          false,
+        fallbackActive:    effectiveFast,
+        heavyLoadFallback: autoFast && !fastMode,
+        placesScored:      0,
+      },
+    };
+    const result = { recommendations, context, meta };
+    if (!debug) {
+      recommendationCache.set(recCacheKey, result, RECOMMENDATION_CACHE_TTL_MS);
+    }
+    logger.info(`[recommendations] events feed uid=${userId} count=${recommendations.length}`);
+    return result;
+  }
+
+  const radiusMeters = userLocation?.radiusMeters ?? 5000;
+  let places = [];
+  if (
+    discoverCategoryKey &&
+    discoverCategoryKey !== "event" &&
+    userLocation?.lat != null &&
+    process.env.GOOGLE_MAPS_API_KEY
+  ) {
+    places = await getNearbyPlacesForDiscoverKey(
+      { lat: userLocation.lat, lng: userLocation.lng },
+      radiusMeters,
+      discoverCategoryKey
+    );
+  }
+  if (!places.length) {
+    places = await getAllPlaces(
+      userLocation?.lat != null ? { lat: userLocation.lat, lng: userLocation.lng } : null,
+      radiusMeters
+    );
+  }
+
+  const placeCategoryActive =
+    Boolean(discoverCategoryKey) && discoverCategoryKey !== "event";
+
+  let filteredPlaces;
+  if (placeCategoryActive) {
+    filteredPlaces = places.filter((p) =>
+      placeMatchesDiscoverKey(p, discoverCategoryKey),
+    );
+  } else if (typeFilter) {
+    const filters = Array.isArray(typeFilter)
+      ? typeFilter.map((t) => String(t).trim().toLowerCase())
+      : [String(typeFilter).trim().toLowerCase()];
+    filteredPlaces = places.filter((p) => {
+      const placeType = String(p?.type ?? "").toLowerCase();
+      return filters.some((t) => placeType === t);
+    });
+  } else {
+    filteredPlaces = places;
+  }
+
+  const legacyTypeFilterActive = Boolean(typeFilter) && !placeCategoryActive;
+
+  const _rawScoringPlaces =
+    placeCategoryActive || legacyTypeFilterActive
+      ? filteredPlaces
+      : places;
+
+  // ── Religion pre-filter ───────────────────────────────────────────────────
+  // Hard filter: religious venues are only shown when they match the user's
+  // denomination.  Non-religious places are always shown to everyone.
+  const userReligion = profile?.religion || null;
+  const scoringPlaces = userReligion && userReligion !== "other" && userReligion !== "prefer_not_to_say"
+    ? _rawScoringPlaces.filter((p) => placeAllowedByReligion(p, userReligion))
+    : _rawScoringPlaces;
+
+  if (scoringPlaces.length < _rawScoringPlaces.length) {
+    logger.info(
+      `[recommendations] religion pre-filter uid=${userId} religion=${userReligion} ` +
+      `removed=${_rawScoringPlaces.length - scoringPlaces.length} places`,
+    );
+  }
+
+  // ── Fast pricing visibility + tier (only when spend typically applies) ─────
+  const _userBudgetTier  = userBudgetTier(profile);
+  const _userBudgetLevel = tierToNumber(_userBudgetTier);
+  for (const p of scoringPlaces) {
+    const pe = resolvePricingEligibility(p);
+    p._pricingEnabled = pe.pricingEnabled;
+    p._pricingReason = pe.reason;
+    if (pe.pricingEnabled) {
+      if (!p._fastPriceLevel) {
+        const { priceLevel } = classifyPrice(p);
+        p._fastPriceLevel = priceLevel;
+      }
+    } else {
+      p._fastPriceLevel = null;
+    }
+  }
+
+  if (discoverCategoryKey && discoverCategoryKey !== "event" && scoringPlaces.length === 0) {
+    const elapsedMs = Math.round(performance.now() - startMs);
+    const m         = loadModel();
+    const meta = {
+      profileFound:       true,
+      routineCount:       routines.length,
+      interactionCount:   interactions.length,
+      topInterestType:    null,
+      placesInCatalogue:  0,
+      detectedIntent:     null,
+      discoverCategory:   discoverCategoryKey,
+      categoryEmpty:      true,
+      session:            {
+        dominantSessionType: null,
+        sessionIntent:     null,
+        recentActionCount: 0,
+      },
+      longTerm:           { ...topEmbeddingEntry(profile?.embeddingSnapshot ?? null) },
+      exploration:        { explorationWeight: 0, exploitationWeight: 0, explorationActive: false },
+      ai: {
+        modelActive:    isModelLoaded(),
+        modelVersion:   m.version ?? "v1",
+        versionNumber:  m.versionNumber ?? 0,
+        lastTrainedAt:  m.trainedAt ?? null,
+        sampleCount:    m.sampleCount ?? 0,
+        predictedType:  null,
+        confidence:     0,
+        pyModelVersion: "v0",
+        pyModelActive:  false,
+        llmEnabled:     false,
+      },
+      learning:          { recencyWeightActive: false, behaviorShiftDetected: false },
+      location:          {
+        source:
+          userLocation?.lat != null && process.env.GOOGLE_MAPS_API_KEY ? "google_maps" : "firestore",
+        radiusUsed:        userLocation?.radiusMeters ?? null,
+        resultsFetched:    0,
+        typeFilter:        typeFilter ?? null,
+        modeFilter:        modeFilter ?? null,
+        discoverCategory:  discoverCategoryKey,
+      },
+      personalization:   { dominantHabits: [], topInterestWeights: {} },
+      experiment: experimentActive
+        ? { experimentActive: true, experimentId: EXPERIMENT_ID, variantAssigned: experimentVariant }
+        : { experimentActive: false, experimentId: null, variantAssigned: null },
+      performance: {
+        elapsedMs,
+        cacheHit:          false,
+        fallbackActive:    effectiveFast,
+        heavyLoadFallback: autoFast && !fastMode,
+        placesScored:      0,
+      },
+    };
+    const result = { recommendations: [], context, meta };
+    if (!debug) {
+      recommendationCache.set(recCacheKey, result, RECOMMENDATION_CACHE_TTL_MS);
+    }
+    return result;
   }
 
   const now = new Date();
@@ -1511,6 +1863,13 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
       ? place.images.slice(0, 5)
       : buildPlacePhotoPaths(place.id, photoRefs, 400, 5);
 
+    const pricingEnabled = place._pricingEnabled === true;
+    const fastPrice = pricingEnabled ? (place._fastPriceLevel || "mid") : null;
+    const placeMatch = {
+      budget: !pricingEnabled || tierToNumber(fastPrice) <= _userBudgetLevel,
+      religion: placeAllowedByReligion(place, userReligion),
+    };
+
     const entry = {
       id:         place.id,
       name:       place.name,
@@ -1523,6 +1882,18 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
       distanceKm: place.distanceKm  ?? null,
       images,
       photoReferences: photoRefs.length ? photoRefs.slice(0, 5) : undefined,
+      // Carry through fields used for AI pricing/RAG (consumed by callAiService).
+      description:      place.description      ?? "",
+      address:          place.address          ?? place.vicinity ?? "",
+      userRatingsTotal: place.userRatingsTotal ?? null,
+      googlePriceLevel: place.priceLevel       ?? null,
+      tags:             Array.isArray(place.tags) ? place.tags : [],
+      pricingEnabled,
+      pricingReason:    place._pricingReason || null,
+      priceLevel:       fastPrice,
+      priceSource:      pricingEnabled ? "fast_classifier" : "n/a",
+      estimatedCost:    pricingEnabled ? undefined : {},
+      matches:          placeMatch,
     };
 
     if (debug) entry.scoreBreakdown = breakdown;
@@ -1541,15 +1912,28 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
   let _aiConfidence    = 0;
   let _aiModelVersion  = "v0";
 
+  let _aiLlmEnabled = false;
+
+  const discoverKeyForAi = discoverCategoryKey ?? undefined;
+
   if (!effectiveFast) {
-    const { scoreMap: aiScoreMap, predictedType, confidence, modelVersion } = await callAiService(
-      userId, scored, { ...context, detectedIntent },
-      recentActions, profile?.typeAffinity
+    const {
+      scoreMap:      aiScoreMap,
+      enrichmentMap: aiEnrichmentMap,
+      predictedType, confidence, modelVersion, llmEnabled,
+    } = await callAiService(
+      userId,
+      scored,
+      { ...context, detectedIntent, discoverCategoryKey: discoverKeyForAi },
+      recentActions,
+      profile?.typeAffinity,
+      profile,
     );
 
     _aiPredictedType = predictedType;
     _aiConfidence    = confidence;
     _aiModelVersion  = modelVersion;
+    _aiLlmEnabled    = llmEnabled;
 
     if (aiScoreMap.size > 0) {
       const AI_BLEND = parseFloat(process.env.AI_SCORE_BLEND ?? "0.3");
@@ -1561,14 +1945,52 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
 
         // Normalise the rule rawScore to [0,1] range for blending with aiScore
         // (rawScore can be negative; we use the normalised [0,100] score / 100).
-        const ruleNorm = entry.score / 100; // entry.score is already normalizeScore(rawScore)
+        const ruleNorm = entry.score / 100;
         const blended  = RULE_BLEND * ruleNorm + AI_BLEND * aiScore;
 
         // Update both rawScore and normalised score
         entry.rawScore = +(entry.rawScore + (aiScore - 0.5) * 10).toFixed(3);
         entry.score    = normalizeScore(entry.rawScore);
 
-        // Always attach predictedType so the mobile can show "Recommended because…"
+        // ── Attach AI enrichment (pricing + reason) ──────────────────────
+        const enrichment = aiEnrichmentMap.get(entry.id);
+        if (enrichment) {
+          if (typeof enrichment.pricingEnabled === "boolean") {
+            entry.pricingEnabled = enrichment.pricingEnabled;
+          }
+          entry.pricingReason = enrichment.pricingReason ?? entry.pricingReason ?? null;
+
+          if (!entry.pricingEnabled) {
+            entry.priceLevel = null;
+            entry.estimatedCost = {};
+            entry.priceConfidence = 0;
+            entry.priceSource = "ai_disabled";
+            if (enrichment.priceSignals?.length) {
+              entry.priceSignals = enrichment.priceSignals;
+            }
+            entry.priceCategory = enrichment.priceCategory ?? entry.priceCategory;
+            if (enrichment.reason) entry.reason = enrichment.reason;
+            entry.matches = {
+              budget: true,
+              religion: entry.matches?.religion ?? true,
+            };
+          } else {
+            entry.priceLevel = enrichment.priceLevel ?? entry.priceLevel;
+            entry.priceSource = "ai_classifier";
+            entry.priceConfidence = enrichment.priceConfidence;
+            entry.priceCategory = enrichment.priceCategory;
+            entry.estimatedCost = enrichment.estimatedCost;
+            if (enrichment.priceSignals?.length) {
+              entry.priceSignals = enrichment.priceSignals;
+            }
+            if (enrichment.reason) entry.reason = enrichment.reason;
+            entry.matches = {
+              budget: tierToNumber(entry.priceLevel || "mid") <= _userBudgetLevel,
+              religion: entry.matches?.religion ?? true,
+            };
+          }
+        }
+
         if (predictedType) entry.predictedType = predictedType;
 
         if (debug && entry.scoreBreakdown) {
@@ -1577,12 +1999,37 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
           entry.scoreBreakdown.predictedType  = predictedType ?? null;
         }
       }
-      logger.info(`[AI] merged ${aiScoreMap.size} aiScores  predictedType=${predictedType}  uid=${userId}`);
+      logger.info(
+        `[AI] merged ${aiScoreMap.size} aiScores+enrichment ` +
+        `predictedType=${predictedType} llm=${llmEnabled} uid=${userId}`,
+      );
     }
   }
 
   // ── Phase 2: Filter out dismissed places ─────────────────────────────────────
-  const withoutDismissed = scored.filter((p) => !dismissedIds.has(p.id));
+  const _afterDismissed = scored.filter((p) => !dismissedIds.has(p.id));
+
+  // ── Phase 2b: Strict budget filter ────────────────────────────────────────
+  // Hard rule: never surface places priced above the user's budget tier.
+  //   cheap  → only cheap
+  //   mid    → cheap + mid
+  //   expensive → all
+  // We only apply this when the user has a budget set (not cold-start).
+  const hasBudget = Boolean(profile?.weeklyBudget || profile?.budgetRange);
+  const withoutDismissed = hasBudget
+    ? _afterDismissed.filter((p) => {
+        if (!p.pricingEnabled) return true;
+        const pLevel = tierToNumber(p.priceLevel || "mid");
+        return pLevel <= _userBudgetLevel;
+      })
+    : _afterDismissed;
+
+  if (hasBudget && withoutDismissed.length < _afterDismissed.length) {
+    logger.info(
+      `[recommendations] budget filter uid=${userId} budget=${_userBudgetTier} ` +
+      `removed=${_afterDismissed.length - withoutDismissed.length} over-budget places`,
+    );
+  }
 
   // ── Phase 3: Sort descending by normalized score ──────────────────────────────
   withoutDismissed.sort((a, b) => b.score - a.score);
@@ -1659,7 +2106,7 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
   const saved   = interleaved.filter((p) =>  savedIds.has(p.id));
   const others  = interleaved.filter((p) => !savedIds.has(p.id));
   const pinned  = saved.slice(0, 5);
-  const recommendations = [...pinned, ...others.slice(0, limit - pinned.length)];
+  let recommendations = [...pinned, ...others.slice(0, limit - pinned.length)];
 
   // Final order must match score (default: AI-blended score descending).
   recommendations.sort((a, b) => b.score - a.score);
@@ -1690,6 +2137,18 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
 
   // ── v16: Hard cap — max 2 of the same type in top 5 ───────────────────────────
   enforceMaxSameTypeInTopN(recommendations, withoutDismissed, 5, 2);
+
+  if (discoverCategoryKey && discoverCategoryKey !== "event") {
+    const asPlace = (r) => ({
+      type: r.type,
+      name: r.name,
+      tags: r.tags ?? [],
+      category: r.category,
+    });
+    recommendations = recommendations
+      .filter((r) => placeMatchesDiscoverKey(asPlace(r), discoverCategoryKey))
+      .slice(0, limit);
+  }
 
   const meta = {
     profileFound:      true,
@@ -1724,6 +2183,7 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
         confidence:     _aiConfidence,
         pyModelVersion: _aiModelVersion,
         pyModelActive:  _aiPredictedType !== null,
+        llmEnabled:     _aiLlmEnabled,
       };
     })(),
     learning: {
@@ -1738,7 +2198,9 @@ export const getRecommendations = async (userId, debug = false, limit = 10, user
       resultsFetched: scoringPlaces.length,
       typeFilter:     typeFilter  ?? null,
       modeFilter:     modeFilter  ?? null,
+      discoverCategory: discoverCategoryKey ?? null,
     },
+    discoverCategory: discoverCategoryKey ?? null,
     personalization: {
       dominantHabits,
       topInterestWeights: topWeightsForMeta(interestWeights, 5),

@@ -14,6 +14,7 @@ import routineRouter from "./routes/routine.routes.js";
 import interactionRouter from "./routes/interaction.routes.js";
 import recommendationRouter from "./routes/recommendation.routes.js";
 import placesRouter from "./routes/places.routes.js";
+import eventRouter from "./routes/event.routes.js";
 import devRouter from "./routes/dev.routes.js";
 import adminRouter from "./routes/admin.routes.js";
 import aiRouter from "./routes/ai.routes.js";
@@ -87,6 +88,9 @@ app.use("/api/recommendations", recommendationRouter);
 
 // Places routes — full place details + photo proxy under /api/places
 app.use("/api/places", placesRouter);
+
+// Events routes — scraped Ethiopian events under /api/events
+app.use("/api/events", eventRouter);
 
 // AI service proxy routes — manual train, reset, status under /api/ai
 app.use("/api/ai", aiRouter);

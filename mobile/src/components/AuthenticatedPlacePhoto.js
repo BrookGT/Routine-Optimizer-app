@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
-import { Image } from "react-native";
-import { auth } from "../config/firebase";
+import { useState } from "react";
+import { Image, StyleSheet, View } from "react-native";
 import { API_BASE_URL } from "../utils/constants";
 
 /**
@@ -16,55 +15,46 @@ export function toPlacePhotoAbsoluteUri(pathOrUrl) {
 }
 
 /**
- * Loads a place photo through the authenticated GET /places/:id/photo endpoint
- * (302 → Google CDN). React Native Image supports Authorization headers here.
+ * Shows a place thumbnail or carousel slide.
+ * - Internal paths hit GET /api/places/:id/photo (server streams HTTP 200 image bytes).
+ * - External URLs (e.g. scraped events) load directly.
+ *
+ * Props: use either `imagePath` or `relativePath` (call sites historically used both).
  */
 export default function AuthenticatedPlacePhoto({
     imagePath,
+    relativePath,
     style,
     resizeMode = "cover",
     onLoad,
     onError,
 }) {
-    const [source, setSource] = useState(null);
+    const path = imagePath ?? relativePath;
+    const uri = toPlacePhotoAbsoluteUri(path);
+    const [failed, setFailed] = useState(false);
 
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            const uri = toPlacePhotoAbsoluteUri(imagePath);
-            if (!uri) {
-                setSource(null);
-                return;
-            }
-            try {
-                const user = auth.currentUser;
-                const token = user ? await user.getIdToken() : "";
-                if (cancelled) return;
-                setSource(
-                    token
-                        ? { uri, headers: { Authorization: `Bearer ${token}` } }
-                        : { uri },
-                );
-            } catch {
-                if (!cancelled) {
-                    setSource({ uri: toPlacePhotoAbsoluteUri(imagePath) });
-                }
-            }
-        })();
-        return () => {
-            cancelled = true;
-        };
-    }, [imagePath]);
+    if (!path || !uri) {
+        return null;
+    }
 
-    if (!imagePath || !source) return null;
+    if (failed) {
+        return <View style={[style, styles.fallback]} />;
+    }
 
     return (
         <Image
-            source={source}
+            source={{ uri }}
             style={style}
             resizeMode={resizeMode}
             onLoad={onLoad}
-            onError={onError}
+            onError={() => {
+                setFailed(true);
+                onError?.();
+            }}
         />
     );
 }
+
+const styles = StyleSheet.create({
+    fallback: { backgroundColor: "rgba(20,40,60,0.22)" },
+});
