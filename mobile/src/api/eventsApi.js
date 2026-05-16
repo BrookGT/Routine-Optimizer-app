@@ -1,36 +1,5 @@
 import apiClient from "./client";
 
-// ─── Single-event cache (repeat opens + deduped in-flight fetches) ─────────────
-
-const EVENT_CACHE_TTL_MS = 5 * 60 * 1000;
-const eventCache = new Map(); // id → { t, payload }
-const eventInFlight = new Map();
-
-function eventCacheGet(id) {
-    const key = String(id);
-    const entry = eventCache.get(key);
-    if (!entry) return null;
-    if (Date.now() - entry.t > EVENT_CACHE_TTL_MS) {
-        eventCache.delete(key);
-        return null;
-    }
-    return entry.payload;
-}
-
-function eventCacheSet(id, payload) {
-    if (!payload || typeof payload !== "object") return;
-    eventCache.set(String(id), { t: Date.now(), payload });
-}
-
-/**
- * Fire-and-forget: warms cache before navigation completes.
- * @param {string} [eventId]
- */
-export function prefetchEventById(eventId) {
-    if (!eventId) return;
-    getEventById(String(eventId), { bypassCache: false }).catch(() => null);
-}
-
 /**
  * Fetch all events with optional filters and location for proximity sorting.
  *
@@ -61,34 +30,8 @@ export async function getRecommendedEvents() {
  * Fetch a single event by its Firestore document ID.
  *
  * @param {string} eventId
- * @param {{ bypassCache?: boolean }} [options]
  */
-export async function getEventById(eventId, options = {}) {
-    const { bypassCache = false } = options;
-    const key = String(eventId);
-    if (!key) return null;
-
-    if (!bypassCache) {
-        const hit = eventCacheGet(key);
-        if (hit) return hit;
-    }
-    const pending = eventInFlight.get(key);
-    if (pending) return pending;
-
-    const p = (async () => {
-        try {
-            const { data } = await apiClient.get(
-                `/events/${encodeURIComponent(key)}`,
-                { timeout: 30_000 },
-            );
-            const ev = data?.event ?? data;
-            if (ev && typeof ev === "object") eventCacheSet(key, ev);
-            return ev;
-        } finally {
-            eventInFlight.delete(key);
-        }
-    })();
-
-    eventInFlight.set(key, p);
-    return p;
+export async function getEventById(eventId) {
+    const { data } = await apiClient.get(`/events/${encodeURIComponent(eventId)}`);
+    return data?.event ?? data;
 }

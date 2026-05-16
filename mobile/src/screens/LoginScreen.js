@@ -21,9 +21,6 @@ import { GOOGLE_WEB_CLIENT_ID } from "../utils/constants";
 import { getApiErrorMessage } from "../utils/api";
 import { useAppTheme } from "../context/ThemeContext";
 
-/** Same rules as ProfileSetupScreen — public handle, not a legal name. */
-const USERNAME_REGEX = /^[a-z][a-z0-9_]{2,19}$/;
-
 function AuthButton({
     label,
     icon,
@@ -173,7 +170,6 @@ export default function LoginScreen() {
 
     const [isSignUp, setIsSignUp] = useState(false);
     const [email, setEmail] = useState("");
-    const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -204,18 +200,6 @@ export default function LoginScreen() {
         }
 
         if (isSignUp) {
-            const rawUser = username.trim().toLowerCase();
-            if (!rawUser) {
-                Alert.alert("Missing username", "Choose a username to continue.");
-                return;
-            }
-            if (!USERNAME_REGEX.test(rawUser)) {
-                Alert.alert(
-                    "Invalid username",
-                    "Use 3–20 characters: start with a letter, then letters, numbers, or underscores (a–z, 0–9, _).",
-                );
-                return;
-            }
             if (password !== confirmPassword) {
                 Alert.alert("Passwords", "Passwords do not match.");
                 return;
@@ -232,23 +216,19 @@ export default function LoginScreen() {
         try {
             setSubmitting(true);
             if (isSignUp) {
-                await signUpWithEmail(
-                    trimmedEmail,
-                    password,
-                    username.trim().toLowerCase(),
-                );
+                await signUpWithEmail(trimmedEmail, password);
             } else {
                 await signInWithEmail(trimmedEmail, password);
             }
         } catch (error) {
-            const fallback = isSignUp
-                ? "Could not create account."
-                : "Invalid email or password.";
             Alert.alert(
                 isSignUp ? "Sign up failed" : "Sign in failed",
-                error?.code === "username_taken"
-                    ? error.message
-                    : getApiErrorMessage(error, fallback),
+                getApiErrorMessage(
+                    error,
+                    isSignUp
+                        ? "Could not create account."
+                        : "Invalid email or password.",
+                ),
             );
         } finally {
             setSubmitting(false);
@@ -364,33 +344,6 @@ export default function LoginScreen() {
                         </View>
 
                         <View style={styles.emailBlock}>
-                            {isSignUp ? (
-                                <>
-                                    <Text style={styles.fieldLabel}>
-                                        Username
-                                    </Text>
-                                    <Text style={styles.fieldHint}>
-                                        A public handle only — not your real name.
-                                    </Text>
-                                    <View style={styles.usernameInputRow}>
-                                        <Text style={styles.usernameAt}>@</Text>
-                                        <TextInput
-                                            value={username}
-                                            onChangeText={(t) =>
-                                                setUsername(
-                                                    t.toLowerCase().replace(/\s/g, ""),
-                                                )
-                                            }
-                                            style={styles.usernameFieldInput}
-                                            placeholder="your_username"
-                                            placeholderTextColor={palette.textMuted}
-                                            autoCapitalize="none"
-                                            autoCorrect={false}
-                                            textContentType="username"
-                                        />
-                                    </View>
-                                </>
-                            ) : null}
                             <Text style={styles.fieldLabel}>Email</Text>
                             <TextInput
                                 value={email}
@@ -459,7 +412,6 @@ export default function LoginScreen() {
                             onPress={() => {
                                 setIsSignUp((v) => !v);
                                 setConfirmPassword("");
-                                setUsername("");
                             }}
                             style={styles.toggleRow}
                         >
@@ -647,34 +599,6 @@ function createStyles(palette, isDark) {
             textTransform: "uppercase",
             letterSpacing: 1,
             fontWeight: "700",
-        },
-        fieldHint: {
-            marginTop: 4,
-            color: palette.textSecondary,
-            fontSize: 12,
-            lineHeight: 17,
-        },
-        usernameInputRow: {
-            flexDirection: "row",
-            alignItems: "center",
-            height: 46,
-            borderRadius: 12,
-            borderWidth: 1,
-            borderColor: palette.borderStrong,
-            backgroundColor: palette.surfaceStrong,
-            paddingHorizontal: 12,
-            gap: 4,
-        },
-        usernameAt: {
-            color: palette.textMuted,
-            fontSize: 18,
-            fontWeight: "700",
-        },
-        usernameFieldInput: {
-            flex: 1,
-            color: palette.textPrimary,
-            fontSize: 15,
-            height: "100%",
         },
         fieldInput: {
             height: 46,

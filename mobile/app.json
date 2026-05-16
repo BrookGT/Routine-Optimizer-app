@@ -38,7 +38,15 @@
       ],
       "expo-web-browser",
       "expo-apple-authentication",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-notifications",
+        {
+          "color": "#38AEFF",
+          "defaultChannel": "wuloye-default",
+          "sounds": []
+        }
+      ]
     ],
     "extra": {
       "eas": {

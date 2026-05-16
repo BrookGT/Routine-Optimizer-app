@@ -25,7 +25,6 @@ import { normalisePlace } from "../utils/recommendationPlaces";
 import { getApiErrorMessage, unwrapApiData } from "../utils/api";
 import { useAppTheme } from "../context/ThemeContext";
 import { getLocationQueryParams } from "../utils/locationForApi";
-import { prefetchPlaceDetails } from "../api/placeApi";
 
 // ─── In-memory recommendation cache (5-minute TTL) ────────────────────────────
 
@@ -495,9 +494,6 @@ export default function ActivityRecommendationsScreen() {
                                 <PlaceCard
                                     place={item}
                                     onPress={() => openPlace(item, index + 1)}
-                                    onPressIn={() =>
-                                        prefetchPlaceDetails(item.placeId ?? item.id)
-                                    }
                                 />
                                 <MatchBreakdown
                                     place={item}

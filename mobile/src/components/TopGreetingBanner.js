@@ -10,6 +10,8 @@ export default function TopGreetingBanner({
     subtitle,
     onAction,
     actionIcon = "notifications-outline",
+    /** Unread count for notification bell (modern app badge). */
+    actionBadgeCount = 0,
 }) {
     const { palette, gradients, isDark } = useAppTheme();
     const styles = useMemo(
@@ -62,6 +64,13 @@ export default function TopGreetingBanner({
                             color={isDark ? palette.iceWhite : palette.iceWhite}
                         />
                     </LinearGradient>
+                    {actionBadgeCount > 0 ? (
+                        <View style={styles.badge} accessibilityLabel={`${actionBadgeCount} unread notifications`}>
+                            <Text style={styles.badgeText}>
+                                {actionBadgeCount > 99 ? "99+" : actionBadgeCount}
+                            </Text>
+                        </View>
+                    ) : null}
                 </Pressable>
             ) : null}
         </LinearGradient>
@@ -114,6 +123,7 @@ function createStyles(palette, isDark) {
             fontWeight: "600",
         },
         actionButtonWrap: {
+            position: "relative",
             width: 36,
             height: 36,
             borderRadius: 18,
@@ -121,13 +131,34 @@ function createStyles(palette, isDark) {
             borderColor: isDark
                 ? "rgba(145, 211, 255, 0.46)"
                 : "rgba(255,255,255,0.55)",
-            overflow: "hidden",
+            overflow: "visible",
         },
         actionButton: {
             width: "100%",
             height: "100%",
             alignItems: "center",
             justifyContent: "center",
+            borderRadius: 18,
+            overflow: "hidden",
+        },
+        badge: {
+            position: "absolute",
+            top: -5,
+            right: -5,
+            minWidth: 18,
+            height: 18,
+            paddingHorizontal: 4,
+            borderRadius: 9,
+            backgroundColor: "#FF3B30",
+            alignItems: "center",
+            justifyContent: "center",
+            borderWidth: 2,
+            borderColor: isDark ? "rgba(14,40,70,0.98)" : "rgba(255,255,255,0.98)",
+        },
+        badgeText: {
+            color: "#FFFFFF",
+            fontSize: 10,
+            fontWeight: "900",
         },
     });
 }

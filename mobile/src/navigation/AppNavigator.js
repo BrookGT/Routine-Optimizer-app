@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMemo } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../context/AuthContext";
+import { useNotifications } from "../context/NotificationContext";
 import LoginScreen from "../screens/LoginScreen";
 import ProfileSetupScreen from "../screens/ProfileSetupScreen";
 import PlaceDetailScreen from "../screens/PlaceDetailScreen";
@@ -14,6 +15,8 @@ import SplashScreen from "../screens/SplashScreen";
 import RoutineBuilderScreen from "../screens/RoutineBuilderScreen";
 import SavedPlacesScreen from "../screens/SavedPlacesScreen";
 import EventsScreen from "../screens/EventsScreen";
+import NotificationPermissionScreen from "../screens/NotificationPermissionScreen";
+import NotificationSettingsScreen from "../screens/NotificationSettingsScreen";
 import MainTabs from "./MainTabs";
 import { useAppTheme } from "../context/ThemeContext";
 
@@ -101,6 +104,12 @@ export default function AppNavigator() {
     const { user, ready, profile, profileError, retryProfileLoad, clearAuth } =
         useAuth();
 
+    const {
+        showPermissionScreen,
+        requestPermissions,
+        dismissPermissionScreen,
+    } = useNotifications();
+
     // ── 1. Not bootstrapped yet → splash ──────────────────────────────────
     if (!ready) {
         return <SplashScreen />;
@@ -138,6 +147,18 @@ export default function AppNavigator() {
 
     const onboarded = hasCompletedOnboarding(profile);
     const initialRouteName = onboarded ? "MainTabs" : "ProfileSetup";
+
+    // ── 5. Show notification permission explanation if needed ─────────────
+    // Only shown to users who have completed onboarding so we never
+    // interrupt the profile setup / routine builder flows.
+    if (onboarded && showPermissionScreen) {
+        return (
+            <NotificationPermissionScreen
+                onAllow={requestPermissions}
+                onSkip={dismissPermissionScreen}
+            />
+        );
+    }
 
     return (
         <Stack.Navigator
@@ -230,6 +251,18 @@ export default function AppNavigator() {
                     }),
                     gestureEnabled: true,
                     fullScreenGestureEnabled: true,
+                }}
+            />
+            <Stack.Screen
+                name="NotificationSettings"
+                component={NotificationSettingsScreen}
+                options={{
+                    animation: Platform.select({
+                        ios: "slide_from_right",
+                        android: "slide_from_right",
+                        default: "fade",
+                    }),
+                    gestureEnabled: true,
                 }}
             />
             {/* Keep Login in the stack so back-navigation works in edge cases */}

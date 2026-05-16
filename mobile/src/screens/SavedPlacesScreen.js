@@ -10,7 +10,6 @@ import Loader from "../components/Loader";
 import TopGreetingBanner from "../components/TopGreetingBanner";
 import { useSavedPlaces } from "../hooks/useSavedPlaces";
 import { useAppTheme } from "../context/ThemeContext";
-import { prefetchPlaceDetails } from "../api/placeApi";
 
 export default function SavedPlacesScreen({ navigation }) {
     const { palette, gradients } = useAppTheme();
@@ -36,7 +35,6 @@ export default function SavedPlacesScreen({ navigation }) {
     );
 
     function openPlaceDetail(place) {
-        prefetchPlaceDetails(place?.placeId ?? place?.id);
         const parent =
             typeof navigation.getParent === "function"
                 ? navigation.getParent()
@@ -108,9 +106,6 @@ export default function SavedPlacesScreen({ navigation }) {
                             <PlaceCard
                                 place={item}
                                 onPress={() => openPlaceDetail(item)}
-                                onPressIn={() =>
-                                    prefetchPlaceDetails(item.placeId ?? item.id)
-                                }
                                 onDismiss={() => onDismiss(item)}
                             />
                         )}
