@@ -19,6 +19,7 @@ import devRouter from "./routes/dev.routes.js";
 import adminRouter from "./routes/admin.routes.js";
 import aiRouter from "./routes/ai.routes.js";
 import notificationRouter from "./routes/notification.routes.js";
+import reminderRouter from "./routes/reminder.routes.js";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler.js";
 import { initModelCache } from "./services/ai/modelService.js";
 import { logger } from "./utils/logger.js";
@@ -102,6 +103,9 @@ app.use("/api/ai", aiRouter);
 
 // Notification system — preferences, AI content generation, history under /api/notifications
 app.use("/api/notifications", notificationRouter);
+
+// User-created custom reminders (sync + metadata)
+app.use("/api/reminders", reminderRouter);
 
 // Dev routes — seeding and inspection tools, only active outside production
 if (process.env.NODE_ENV !== "production") {

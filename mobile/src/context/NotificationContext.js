@@ -41,6 +41,7 @@ import {
     markAllInboxNotificationsRead,
     normalizeNavigateTarget,
 } from "../services/notificationService";
+import { syncReminderNotificationsWithServer } from "../api/reminderApi";
 
 const NotificationContext = createContext(null);
 
@@ -77,16 +78,12 @@ export function NotificationProvider({ children, profile }) {
     useEffect(() => {
         bootstrap();
         return () => {
-            if (responseListenerRef.current) {
-                Notifications.removeNotificationSubscription(
-                    responseListenerRef.current,
-                );
-            }
-            if (foregroundListenerRef.current) {
-                Notifications.removeNotificationSubscription(
-                    foregroundListenerRef.current,
-                );
-            }
+            // expo-notifications ≥0.32 returns EventSubscription with .remove();
+            // removeNotificationSubscription was removed from the public API.
+            responseListenerRef.current?.remove?.();
+            foregroundListenerRef.current?.remove?.();
+            responseListenerRef.current = null;
+            foregroundListenerRef.current = null;
         };
     }, []);
 
@@ -115,6 +112,14 @@ export function NotificationProvider({ children, profile }) {
             cancelled = true;
         };
     }, []);
+
+    // Reconcile user custom reminders with Expo after permission + bootstrap (additive).
+    useEffect(() => {
+        if (!isInitialized || permissionStatus !== "granted" || !profile?.uid) {
+            return;
+        }
+        syncReminderNotificationsWithServer().catch(() => null);
+    }, [isInitialized, permissionStatus, profile?.uid]);
 
     async function bootstrap() {
         await setupAndroidChannels();

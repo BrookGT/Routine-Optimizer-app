@@ -1,7 +1,7 @@
 {
-  "version": "v41",
-  "versionNumber": 41,
-  "lastTrainedAt": "2026-05-16T14:16:44.747987+00:00",
+  "version": "v43",
+  "versionNumber": 43,
+  "lastTrainedAt": "2026-05-16T23:45:57.476960+00:00",
   "dataSize": 0,
   "performanceMetrics": {
     "bandit_arms": 8,
@@ -10,7 +10,7 @@
       "places": 0,
       "users": 0
     },
-    "bandit_users": 10,
+    "bandit_users": 11,
     "sequence_final_loss": null
   }
 }

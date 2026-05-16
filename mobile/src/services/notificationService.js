@@ -15,6 +15,10 @@ import * as Device from "expo-device";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiClient } from "../api/client";
+import {
+    ensureCustomReminderAndroidChannel,
+    deepLinkForReminderCategory,
+} from "./customReminderService";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -124,6 +128,8 @@ export async function setupAndroidChannels() {
         sound: "default",
         showBadge: false,
     });
+
+    await ensureCustomReminderAndroidChannel();
 }
 
 // ─── Permission helpers ───────────────────────────────────────────────────────
@@ -641,6 +647,13 @@ export function extractNavigationFromData(data) {
                 };
             }
             return { screen: "Discover", params: {} };
+        case "custom_reminder": {
+            const link =
+                typeof data.deepLink === "string"
+                    ? data.deepLink
+                    : deepLinkForReminderCategory(data.category);
+            return parseDeepLink(link) ?? { screen: "Reminders", params: {} };
+        }
         default:
             return { screen: "Home", params: {} };
     }
@@ -734,6 +747,8 @@ export function parseDeepLink(url) {
             };
         case "saved":
             return { screen: "SavedPlaces", params: {} };
+        case "reminders":
+            return { screen: "Reminders", params: {} };
         default:
             return { screen: "Home", params: {} };
     }

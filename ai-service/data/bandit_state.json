@@ -402,5 +402,43 @@
       "alpha": 3.5,
       "beta": 1.0
     }
+  },
+  "hmFQxvt8HZTUjjzbTHWijgBrSWo2": {
+    "gym": {
+      "alpha": 2.0,
+      "beta": 1.0
+    },
+    "yoga": {
+      "alpha": 1.5,
+      "beta": 1.0
+    },
+    "coffee": {
+      "alpha": 1.5,
+      "beta": 1.0
+    },
+    "cafe": {
+      "alpha": 1.0,
+      "beta": 1.0
+    },
+    "restaurant": {
+      "alpha": 1.0,
+      "beta": 1.0
+    },
+    "social": {
+      "alpha": 3.0,
+      "beta": 1.0
+    },
+    "outdoor": {
+      "alpha": 2.0,
+      "beta": 1.0
+    },
+    "park": {
+      "alpha": 1.0,
+      "beta": 1.0
+    },
+    "walk": {
+      "alpha": 2.0,
+      "beta": 1.0
+    }
   }
 }

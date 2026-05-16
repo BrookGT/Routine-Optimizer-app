@@ -36,6 +36,8 @@ const linking = {
             SavedPlaces: "saved",
             Trending: "trending",
             NotificationSettings: "notification-settings",
+            Reminders: "reminders",
+            ReminderEditor: "reminder-editor",
         },
     },
 };
