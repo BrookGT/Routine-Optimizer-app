@@ -9,11 +9,6 @@ import { THEMES } from "./src/theme/theme";
 
 WebBrowser.maybeCompleteAuthSession();
 
-// ─── Deep linking configuration ───────────────────────────────────────────────
-// Maps wuloye:// URLs to React Navigation screens.
-// All notification taps use these paths so the correct screen opens regardless
-// of whether the app was in foreground, background, or completely closed.
-
 const linking = {
     prefixes: ["wuloye://"],
     config: {
@@ -45,21 +40,15 @@ const linking = {
     },
 };
 
-// ─── Inner app (inside NavigationContainer so useNavigation works) ────────────
-
 function InnerApp() {
     const { profile } = useAuth();
 
     return (
-        // NotificationProvider must live INSIDE NavigationContainer so that
-        // its NavConsumer child can call useNavigation() without crashing.
         <NotificationProvider profile={profile}>
             <AppNavigator />
         </NotificationProvider>
     );
 }
-
-// ─── App content ──────────────────────────────────────────────────────────────
 
 function AppContent() {
     const { navigationTheme, mode } = useAppTheme();

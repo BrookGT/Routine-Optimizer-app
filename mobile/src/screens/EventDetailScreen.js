@@ -1,5 +1,4 @@
 import {
-    ActivityIndicator,
     Image,
     Linking,
     Pressable,
@@ -275,7 +274,6 @@ export default function EventDetailScreen({ route, navigation }) {
     const insets = useSafeAreaInsets();
 
     const [event, setEvent] = useState(initial);
-    const [detailLoading, setDetailLoading] = useState(!!initial?.id);
     const [heroFailed, setHeroFailed] = useState(false);
     const [heroTryHttp, setHeroTryHttp] = useState(false);
 
@@ -283,13 +281,19 @@ export default function EventDetailScreen({ route, navigation }) {
         setEvent(initial);
     }, [initial]);
 
+    // Warm hero image cache from list payload so the screen paints faster.
+    useEffect(() => {
+        if (!initial) return;
+        const uri = resolveEventThumbnailUri(initial);
+        if (uri && uri.startsWith("http")) {
+            Image.prefetch(uri).catch(() => null);
+        }
+    }, [initial?.id]);
+
     useEffect(() => {
         let cancelled = false;
         const id = initial?.id;
-        if (!id) {
-            setDetailLoading(false);
-            return undefined;
-        }
+        if (!id) return undefined;
         (async () => {
             try {
                 const fresh = await getEventById(id);
@@ -298,8 +302,6 @@ export default function EventDetailScreen({ route, navigation }) {
                 }
             } catch {
                 /* keep route payload */
-            } finally {
-                if (!cancelled) setDetailLoading(false);
             }
         })();
         return () => {
@@ -444,15 +446,6 @@ export default function EventDetailScreen({ route, navigation }) {
                         <Ionicons name="share-outline" size={20} color={palette.textPrimary} />
                     </Pressable>
                 </View>
-
-                {detailLoading ? (
-                    <View style={[styles.loadingBanner, { borderColor: palette.borderSoft }]}>
-                        <ActivityIndicator size="small" color={palette.oceanBlue} />
-                        <Text style={[styles.loadingBannerText, { color: palette.textMuted }]}>
-                            Refreshing details…
-                        </Text>
-                    </View>
-                ) : null}
 
                 <ScrollView
                     showsVerticalScrollIndicator={false}
@@ -737,20 +730,6 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
         padding: 24,
-    },
-    loadingBanner: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
-        marginHorizontal: 16,
-        marginBottom: 8,
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 12,
-        borderWidth: StyleSheet.hairlineWidth,
-    },
-    loadingBannerText: {
-        fontSize: 13,
     },
     heroWrap: {
         marginHorizontal: 16,
