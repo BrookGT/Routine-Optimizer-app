@@ -16,7 +16,7 @@
 import { Router } from "express";
 
 import { authenticate } from "../middleware/auth.middleware.js";
-import { getProfile, updateProfile } from "../controllers/user.controller.js";
+import { getProfile, updateProfile, checkUsername } from "../controllers/user.controller.js";
 
 const router = Router();
 
@@ -38,6 +38,14 @@ router.get("/profile", authenticate, getProfile);
  * sleepTime, wakeTime, weeklyActivities, mealPreferences, weeklyBudget.
  */
 router.put("/profile", authenticate, updateProfile);
+
+/**
+ * GET /api/profile/username/check?username=xxx
+ *
+ * Checks if a username is available without writing anything.
+ * Returns { data: { available: boolean } }.
+ */
+router.get("/profile/username/check", authenticate, checkUsername);
 
 // ─── Future user-management routes (Sprint 2+) ───────────────────────────────
 // router.get("/users",      authenticate, listUsers);

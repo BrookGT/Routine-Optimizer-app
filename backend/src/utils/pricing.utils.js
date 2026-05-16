@@ -500,17 +500,18 @@ export function tierToNumber(tier) {
  */
 export function userBudgetTier(profile) {
   if (!profile) return "mid";
-  // Prefer numeric weeklyBudget (ETB)
+  // Prefer numeric weeklyBudget (ETB) — aligned with onboarding tiers:
+  //   Cheap: 1–2000 ETB  |  Middle: 2001–10000 ETB  |  Flexible/Expensive: >10000 ETB
   const weekly = profile.weeklyBudget;
   if (typeof weekly === "number" && weekly > 0) {
-    if (weekly <= 1500) return "cheap";
-    if (weekly <= 6500) return "mid";
+    if (weekly <= 2000)  return "cheap";
+    if (weekly <= 10000) return "mid";
     return "expensive";
   }
   // Fall back to budgetRange label
   const label = (profile.budgetRange || "").toLowerCase().trim();
   if (["cheap", "low", "budget", "affordable"].includes(label)) return "cheap";
-  if (["expensive", "high", "luxury", "premium"].includes(label)) return "expensive";
+  if (["expensive", "high", "luxury", "premium", "flexible"].includes(label)) return "expensive";
   return "mid";  // default
 }
 
