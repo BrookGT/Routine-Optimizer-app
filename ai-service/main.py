@@ -38,7 +38,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from store.model_store import load_all
 from routers import predict, train, status, reset, events, scrape
-from routers import feedback, pricing, explain
+from routers import feedback, pricing, explain, notifications
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 
@@ -97,6 +97,7 @@ app.include_router(scrape.router)
 app.include_router(feedback.router)
 app.include_router(pricing.router)
 app.include_router(explain.router)
+app.include_router(notifications.router)
 
 # ─── Health check (liveness probe) ───────────────────────────────────────────
 

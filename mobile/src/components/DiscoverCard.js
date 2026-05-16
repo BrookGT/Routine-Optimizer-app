@@ -13,18 +13,18 @@ import AuthenticatedPlacePhoto from "./AuthenticatedPlacePhoto";
 import { effectivePricingEnabled } from "../utils/pricingDisplay";
 
 /**
- * Discover feed card — like · save · pass. Full actions on detail screen.
+ * DiscoverCard — used in the Discover tab.
+ *
+ * Compact horizontal layout with thumbnail area, place info, AI insight,
+ * distance / score row and four action buttons: View · Save · Dismiss.
+ *
+ * Props:
+ *   place      {object}    — normalised place object from recommendationPlaces.js
+ *   onPress    {function}  — tapping the card body → open detail
+ *   onSave     {function}  — save interaction
+ *   onDismiss  {function}  — dismiss interaction
  */
-export default function DiscoverCard({
-    place,
-    onPress,
-    onPressIn,
-    onLike,
-    onSave,
-    onDismiss,
-    liked = false,
-    saved = false,
-}) {
+export default function DiscoverCard({ place, onPress, onSave, onDismiss }) {
     const { palette, gradients, isDark } = useAppTheme();
     const styles = useMemo(
         () => createStyles(palette, isDark),
@@ -165,7 +165,7 @@ export default function DiscoverCard({
 
     return (
         <Animated.View style={[styles.wrapper, animStyle]}>
-            <Pressable onPress={onPress} onPressIn={onPressIn} style={styles.pressable}>
+            <Pressable onPress={onPress} style={styles.pressable}>
                 <LinearGradient
                     colors={gradients.card}
                     start={{ x: 0, y: 0 }}
@@ -255,30 +255,6 @@ export default function DiscoverCard({
                             </View>
                         ) : null}
 
-                        {/* Match criteria chips */}
-                        {(place?.matches?.budget === true || place?.matches?.religion === true || place?.matches?.lifestyle === true) ? (
-                            <View style={styles.matchChipsRow}>
-                                {place.matches?.budget === true && (
-                                    <View style={[styles.matchChip, { backgroundColor: "rgba(16,185,129,0.1)", borderColor: "rgba(16,185,129,0.4)" }]}>
-                                        <Ionicons name="checkmark-circle" size={8} color="#059669" />
-                                        <Text style={[styles.matchChipText, { color: "#059669" }]}>Budget</Text>
-                                    </View>
-                                )}
-                                {place.matches?.religion === true && (
-                                    <View style={[styles.matchChip, { backgroundColor: "rgba(139,92,246,0.1)", borderColor: "rgba(139,92,246,0.4)" }]}>
-                                        <Ionicons name="checkmark-circle" size={8} color="#7C3AED" />
-                                        <Text style={[styles.matchChipText, { color: "#7C3AED" }]}>Faith</Text>
-                                    </View>
-                                )}
-                                {place.matches?.lifestyle === true && (
-                                    <View style={[styles.matchChip, { backgroundColor: "rgba(249,115,22,0.1)", borderColor: "rgba(249,115,22,0.4)" }]}>
-                                        <Ionicons name="flash" size={8} color="#EA580C" />
-                                        <Text style={[styles.matchChipText, { color: "#EA580C" }]}>Lifestyle</Text>
-                                    </View>
-                                )}
-                            </View>
-                        ) : null}
-
                         {/* AI insight / LLM reason */}
                         {aiInsight ? (
                             <View style={styles.aiRow}>
@@ -296,75 +272,63 @@ export default function DiscoverCard({
                             </View>
                         ) : null}
 
-                        {/* Footer: distance + quick actions */}
+                        {/* Footer: distance + actions */}
                         <View style={styles.footer}>
-                            <View style={styles.footerLeft}>
-                                <View style={styles.distanceRow}>
-                                    <Ionicons
-                                        name="location-outline"
-                                        size={11}
-                                        color={palette.textMuted}
-                                    />
-                                    <Text style={styles.distanceText}>
-                                        {distance}
-                                    </Text>
-                                </View>
+                            <View style={styles.distanceRow}>
+                                <Ionicons
+                                    name="location-outline"
+                                    size={11}
+                                    color={palette.textMuted}
+                                />
+                                <Text style={styles.distanceText}>
+                                    {distance}
+                                </Text>
                             </View>
 
-                            {(typeof onLike === "function" ||
-                                typeof onSave === "function" ||
-                                typeof onDismiss === "function") && (
-                                <View style={styles.feedActions}>
-                                    {typeof onLike === "function" ? (
-                                        <Pressable
-                                            onPress={onLike}
-                                            hitSlop={8}
-                                            style={[
-                                                styles.feedActionBtn,
-                                                liked && styles.feedActionBtnLiked,
-                                            ]}
-                                        >
-                                            <Ionicons
-                                                name={liked ? "heart" : "heart-outline"}
-                                                size={16}
-                                                color={liked ? "#EF4444" : palette.textSecondary}
-                                            />
-                                        </Pressable>
-                                    ) : null}
-                                    {typeof onSave === "function" ? (
-                                        <Pressable
-                                            onPress={onSave}
-                                            hitSlop={8}
-                                            style={[
-                                                styles.feedActionBtn,
-                                                saved && styles.feedActionBtnSaved,
-                                            ]}
-                                        >
-                                            <Ionicons
-                                                name={saved ? "bookmark" : "bookmark-outline"}
-                                                size={16}
-                                                color={palette.deepBlue}
-                                            />
-                                        </Pressable>
-                                    ) : null}
-                                    {typeof onDismiss === "function" ? (
-                                        <Pressable
-                                            onPress={onDismiss}
-                                            hitSlop={8}
-                                            style={[
-                                                styles.feedActionBtn,
-                                                styles.feedActionBtnMuted,
-                                            ]}
-                                        >
-                                            <Ionicons
-                                                name="close"
-                                                size={15}
-                                                color={palette.textMuted}
-                                            />
-                                        </Pressable>
-                                    ) : null}
-                                </View>
-                            )}
+                            <View style={styles.actions}>
+                                {/* View */}
+                                <Pressable
+                                    onPress={onPress}
+                                    hitSlop={6}
+                                    style={styles.actionBtn}
+                                >
+                                    <Ionicons
+                                        name="eye-outline"
+                                        size={15}
+                                        color={palette.deepBlue}
+                                    />
+                                </Pressable>
+
+                                {/* Save */}
+                                {typeof onSave === "function" ? (
+                                    <Pressable
+                                        onPress={onSave}
+                                        hitSlop={6}
+                                        style={styles.actionBtn}
+                                    >
+                                        <Ionicons
+                                            name="heart-outline"
+                                            size={15}
+                                            color={palette.deepBlue}
+                                        />
+                                    </Pressable>
+                                ) : null}
+
+                                {/* Dismiss */}
+                                {typeof onDismiss === "function" ? (
+                                    <Pressable
+                                        onPress={onDismiss}
+                                        hitSlop={6}
+                                        style={styles.actionBtn}
+                                    >
+                                        <Ionicons
+                                            name="close"
+                                            size={15}
+                                            color={palette.textMuted}
+                                        />
+                                    </Pressable>
+                                ) : null}
+                            </View>
                         </View>
                     </View>
                 </LinearGradient>
@@ -473,25 +437,6 @@ function createStyles(palette, isDark) {
             fontSize: 9,
             fontWeight: "600",
         },
-        matchChipsRow: {
-            flexDirection: "row",
-            flexWrap: "wrap",
-            gap: 4,
-            marginBottom: 4,
-        },
-        matchChip: {
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 3,
-            borderWidth: 1,
-            borderRadius: 8,
-            paddingHorizontal: 5,
-            paddingVertical: 2,
-        },
-        matchChipText: {
-            fontSize: 8,
-            fontWeight: "700",
-        },
         aiRow: {
             flexDirection: "row",
             alignItems: "center",
@@ -513,10 +458,7 @@ function createStyles(palette, isDark) {
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
-            marginTop: 6,
-        },
-        footerLeft: {
-            flex: 1,
+            marginTop: 2,
         },
         distanceRow: {
             flexDirection: "row",
@@ -528,37 +470,23 @@ function createStyles(palette, isDark) {
             fontSize: 11,
             fontWeight: "600",
         },
-        feedActions: {
+        actions: {
             flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-        },
-        feedActionBtn: {
-            width: 32,
-            height: 32,
-            borderRadius: 16,
-            alignItems: "center",
-            justifyContent: "center",
+            gap: 4,
             backgroundColor: isDark
-                ? "rgba(22,44,70,0.9)"
-                : "rgba(255,255,255,0.95)",
+                ? "rgba(22,44,70,0.84)"
+                : "rgba(255,255,255,0.84)",
             borderWidth: 1,
             borderColor: palette.borderSoft,
+            borderRadius: 999,
+            paddingHorizontal: 8,
+            paddingVertical: 4,
         },
-        feedActionBtnMuted: {
-            opacity: 0.92,
-        },
-        feedActionBtnLiked: {
-            backgroundColor: isDark
-                ? "rgba(239,68,68,0.15)"
-                : "rgba(254,226,226,0.95)",
-            borderColor: "rgba(239,68,68,0.35)",
-        },
-        feedActionBtnSaved: {
-            backgroundColor: isDark
-                ? "rgba(15,124,199,0.18)"
-                : "rgba(219,242,255,0.95)",
-            borderColor: "rgba(15,124,199,0.40)",
+        actionBtn: {
+            width: 24,
+            height: 24,
+            alignItems: "center",
+            justifyContent: "center",
         },
     });
 }

@@ -42,7 +42,6 @@ import { getTodaysScheduleRows } from "../utils/todaysSchedule";
 import { getApiErrorMessage, unwrapApiData } from "../utils/api";
 import { getLocationQueryParams } from "../utils/locationForApi";
 import { useAppTheme } from "../context/ThemeContext";
-import { prefetchPlaceDetails } from "../api/placeApi";
 
 // ─── Image preloader ──────────────────────────────────────────────────────────
 
@@ -486,7 +485,6 @@ export default function RoutineScreen() {
     }
 
     function openPlaceDetail(place) {
-        prefetchPlaceDetails(place?.placeId ?? place?.id);
         createInteraction({
             placeId:    place.placeId,
             actionType: INTERACTION_TYPES.CLICK,

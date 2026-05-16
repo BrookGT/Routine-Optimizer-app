@@ -18,6 +18,7 @@ import eventRouter from "./routes/event.routes.js";
 import devRouter from "./routes/dev.routes.js";
 import adminRouter from "./routes/admin.routes.js";
 import aiRouter from "./routes/ai.routes.js";
+import notificationRouter from "./routes/notification.routes.js";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler.js";
 import { initModelCache } from "./services/ai/modelService.js";
 import { logger } from "./utils/logger.js";
@@ -98,6 +99,9 @@ app.use("/api/events", eventRouter);
 
 // AI service proxy routes — manual train, reset, status under /api/ai
 app.use("/api/ai", aiRouter);
+
+// Notification system — preferences, AI content generation, history under /api/notifications
+app.use("/api/notifications", notificationRouter);
 
 // Dev routes — seeding and inspection tools, only active outside production
 if (process.env.NODE_ENV !== "production") {

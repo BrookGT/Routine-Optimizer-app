@@ -22,7 +22,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { useAppTheme } from "../context/ThemeContext";
-import { getRecommendedEvents, getEvents, prefetchEventById } from "../api/eventsApi";
+import { getRecommendedEvents, getEvents } from "../api/eventsApi";
 import { getApiErrorMessage } from "../utils/api";
 import { auth } from "../config/firebase";
 import {
@@ -80,7 +80,7 @@ function formatEventDate(isoDate) {
 
 // ─── Event Card ───────────────────────────────────────────────────────────────
 
-function EventCard({ event, onPress, onPressIn, palette, isDark }) {
+function EventCard({ event, onPress, palette, isDark }) {
     const resolvedHttps = useMemo(
         () => resolveEventThumbnailUri(event),
         [event],
@@ -119,7 +119,6 @@ function EventCard({ event, onPress, onPressIn, palette, isDark }) {
 
     return (
         <Pressable
-            onPressIn={() => onPressIn?.(event)}
             onPress={() => onPress(event)}
             style={({ pressed }) => [
                 styles.card,
@@ -413,7 +412,6 @@ export default function EventsScreen({ navigation }) {
                                 <EventCard
                                     event={item}
                                     onPress={handleCardPress}
-                                    onPressIn={(e) => prefetchEventById(e?.id)}
                                     palette={palette}
                                     isDark={isDark}
                                 />
