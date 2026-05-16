@@ -270,6 +270,83 @@ export const computeContextStackBoost = (
   return +boost.toFixed(3);
 };
 
+// ─── Weekly Activities boost map ─────────────────────────────────────────────
+// Maps onboarding `weeklyActivities` entries → canonical place types they imply.
+
+const ACTIVITY_TYPE_MAP = Object.freeze({
+  gym:         ["gym", "yoga"],
+  running:     ["gym", "outdoor"],
+  yoga:        ["yoga", "gym"],
+  hiking:      ["outdoor"],
+  cycling:     ["outdoor", "gym"],
+  swimming:    ["gym", "outdoor"],
+  coffee:      ["coffee", "cafe"],
+  reading:     ["coffee", "cafe"],
+  coding:      ["coffee", "workspace"],
+  studying:    ["coffee", "cafe"],
+  social:      ["social"],
+  cooking:     ["restaurant"],
+  music:       ["music", "social"],
+  movies:      ["cinema"],
+  gaming:      ["social", "cafe"],
+  prayer:      ["church", "mosque", "worship"],
+  meditation:  ["yoga", "outdoor"],
+  shopping:    ["shop", "mall"],
+  art:         ["art", "museum"],
+  sports:      ["gym", "sports"],
+  walking:     ["outdoor"],
+  fitness:     ["gym", "yoga"],
+  work:        ["workspace", "coffee"],
+  relax:       ["spa", "coffee", "outdoor"],
+});
+
+/**
+ * Computes a score boost for a place based on how many of the user's
+ * declared weekly activities align with the place type.
+ *
+ * @param {string}   placeType        — canonical place type
+ * @param {string[]} weeklyActivities — from profile.weeklyActivities
+ * @returns {number} boost in [0, 5]
+ */
+export const weeklyActivitiesBoost = (placeType, weeklyActivities) => {
+  if (!weeklyActivities?.length || !placeType) return 0;
+  const pt = placeType.toLowerCase();
+  let matched = 0;
+  for (const activity of weeklyActivities) {
+    const types = ACTIVITY_TYPE_MAP[activity?.toLowerCase()] ?? [];
+    if (types.includes(pt)) matched += 1;
+  }
+  if (matched === 0) return 0;
+  // Each matching activity contributes 2 pts, capped at 5
+  return Math.min(5, matched * 2);
+};
+
+/**
+ * Returns a score penalty for gender-specific places that don't match the user.
+ *
+ * @param {string} placeType   — canonical place type
+ * @param {string} placeName   — place name (lowercase)
+ * @param {string} userGender  — "male"|"female"|"non_binary"|"prefer_not_to_say"|""
+ * @returns {number} penalty (negative) or 0
+ */
+export const genderContextScore = (placeType, placeName, userGender) => {
+  if (!userGender || userGender === "prefer_not_to_say" || userGender === "non_binary") return 0;
+  const ptype = (placeType || "").toLowerCase();
+  const name  = (placeName  || "").toLowerCase();
+
+  const isFemalePlace =
+    ["nail_salon", "beauty_salon", "ladies_salon", "women_salon"].includes(ptype) ||
+    ["ladies only", "women only", "female only", "ladies salon", "womens"].some((k) => name.includes(k));
+
+  const isMalePlace =
+    ["barbershop", "barber", "mens_salon"].includes(ptype) ||
+    ["men only", "gents only", "male only", "barber", "gents salon"].some((k) => name.includes(k));
+
+  if (isFemalePlace && userGender === "male")   return -4;
+  if (isMalePlace   && userGender === "female") return -4;
+  return 0;
+};
+
 /**
  * Serialises top interest weights for meta (plain object, top `limit` types).
  *

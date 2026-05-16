@@ -54,6 +54,17 @@ export const invalidateEventsCache = () => {
 
 const docToEvent = (doc) => ({ id: doc.id, ...doc.data() });
 
+/** True when Firestore rejected the query because an index is missing. */
+const isFirestoreIndexError = (err) => {
+  const msg = String(err?.message ?? "");
+  const code = err?.code;
+  return (
+    code === 9 ||
+    code === "failed-precondition" ||
+    /FAILED_PRECONDITION|requires an index/i.test(msg)
+  );
+};
+
 // ─── Read helpers ─────────────────────────────────────────────────────────────
 
 /**
@@ -69,20 +80,67 @@ const docToEvent = (doc) => ({ id: doc.id, ...doc.data() });
  */
 export const getAllEvents = async (filters = {}) => {
   const { category, dateFrom, dateTo, location, limit = 50 } = filters;
+  const cappedLimit = Math.min(Math.max(Number(limit) || 50, 1), 500);
 
   // Use cache when no filters applied
   if (!category && !dateFrom && !dateTo && !location && !filters.noCache) {
     if (isCacheValid()) {
       logger.debug(`[events] Cache hit — ${_cache.length} events`);
-      return _cache.slice(0, limit);
+      return _cache.slice(0, cappedLimit);
     }
   }
 
-  let query = db.collection(EVENTS_COLLECTION).orderBy("date", "asc");
-
+  /**
+   * Firestore: combining `where("category","==", …)` with `orderBy("date")`
+   * requires a composite index (FAILED_PRECONDITION). To avoid deploying
+   * indexes for every filter combo, equality on `category` is done alone,
+   * then we sort and date-filter in memory.
+   */
   if (category && VALID_CATEGORIES.includes(category)) {
-    query = query.where("category", "==", category);
+    const maxFetch = Math.min(Math.max(cappedLimit * 25, 500), 8000);
+
+    let events;
+    try {
+      const snap = await db
+        .collection(EVENTS_COLLECTION)
+        .where("category", "==", category)
+        .limit(maxFetch)
+        .get();
+      events = snap.docs.map(docToEvent);
+    } catch (err) {
+      // Old servers / duplicate backends may still run compound queries, or indexes may be enforced oddly.
+      if (!isFirestoreIndexError(err)) throw err;
+      logger.warn(`[events] category query fallback after index error — ${String(err.message).slice(0, 140)}`);
+      const snapFb = await db
+        .collection(EVENTS_COLLECTION)
+        .orderBy("date", "desc")
+        .limit(15000)
+        .get();
+      events = snapFb.docs
+        .map(docToEvent)
+        .filter((e) => String(e.category ?? "other").toLowerCase() === category);
+    }
+
+    if (dateFrom) {
+      events = events.filter((e) => !e.date || String(e.date) >= dateFrom);
+    }
+    if (dateTo) {
+      events = events.filter((e) => !e.date || String(e.date) <= dateTo);
+    }
+
+    events.sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+
+    if (location) {
+      const loc = location.toLowerCase();
+      events = events.filter((e) =>
+        (e.location || "").toLowerCase().includes(loc)
+      );
+    }
+
+    return events.slice(0, cappedLimit);
   }
+
+  let query = db.collection(EVENTS_COLLECTION).orderBy("date", "asc");
 
   if (dateFrom) {
     query = query.where("date", ">=", dateFrom);
@@ -92,7 +150,7 @@ export const getAllEvents = async (filters = {}) => {
     query = query.where("date", "<=", dateTo);
   }
 
-  const snap = await query.limit(limit).get();
+  const snap = await query.limit(cappedLimit).get();
   let events = snap.docs.map(docToEvent);
 
   // Client-side location filter (Firestore doesn't support substring)

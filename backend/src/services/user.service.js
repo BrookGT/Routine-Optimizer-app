@@ -24,7 +24,8 @@
  *     weeklyBudget       {number}         — numeric weekly spend signal
  *     workingHours       {object}         — { morning:{start,end}, afternoon:{start,end}, flexible:bool }
  *     religion           {string}         — "protestant"|"orthodox"|"muslim"|"other"|"prefer_not_to_say"
- *     dailyRoutine       {object}         — { morning:{activities[],breakfastType}, afternoon:{lunchTime,lunchType}, evening:{dinnerTime,dinnerType}, customActivities[] }
+ *     gender             {string}         — "male"|"female"|"non_binary"|"prefer_not_to_say"|"" (optional; new onboarding v3)
+ *     dailyRoutine       {object}         — { morning:{activities[],breakfastType,breakfastOther?}, afternoon:{lunchTime,lunchType,lunchOther?}, evening:{dinnerTime,dinnerType,dinnerOther?} }
  *     weekendPreference  {string}         — "indoor"|"outdoor"|"hiking"|"other"
  *     eventInterests     {string[]}       — e.g. ["tech","religious","social"]
  *     typeAffinity       {object}         — { [placeType]: number } persistent affinity scores (v6)
@@ -118,6 +119,29 @@ export const getUserByEmail = async (email) => {
 };
 
 /**
+ * Checks whether a given username is already taken by another user.
+ *
+ * @param {string} username   — the candidate username (already lowercased/trimmed by caller)
+ * @param {string} [excludeUid]  — UID to exclude from the check (for "is my own username" cases)
+ * @returns {Promise<boolean>} true if the username is available
+ */
+export const isUsernameAvailable = async (username, excludeUid) => {
+  if (!username) return false;
+  const snapshot = await db
+    .collection(USERS_COLLECTION)
+    .where("username", "==", username)
+    .limit(1)
+    .get();
+
+  if (snapshot.empty) return true;
+
+  // Available if the only match is the requesting user themselves.
+  if (excludeUid && snapshot.docs[0].id === excludeUid) return true;
+
+  return false;
+};
+
+/**
  * Updates mutable profile fields for an existing user.
  *
  * Only the keys present in `updates` are written — Firestore's update()
@@ -164,16 +188,100 @@ export const updateUserProfile = async (uid, updates) => {
   return updated.data();
 };
 
+/**
+ * Returns a paginated list of all users.
+ *
+ * @param {object} [options]
+ * @param {number} [options.limit=50]
+ * @param {string|null} [options.startAfter] - last document UID for cursor pagination
+ * @returns {Promise<{ users: object[], total: number, hasMore: boolean }>}
+ */
+export const getAllUsers = async ({ limit = 50, startAfter = null } = {}) => {
+  let query = db.collection(USERS_COLLECTION).orderBy("createdAt", "desc").limit(limit);
+  if (startAfter) {
+    const cursorDoc = await db.collection(USERS_COLLECTION).doc(startAfter).get();
+    if (cursorDoc.exists) {
+      query = query.startAfter(cursorDoc);
+    }
+  }
+  const snapshot = await query.get();
+  const users = snapshot.docs.map((d) => ({ ...d.data(), uid: d.id }));
+  const totalSnap = await db.collection(USERS_COLLECTION).count().get();
+  const total = totalSnap.data().count;
+  return { users, total, hasMore: users.length === limit };
+};
+
+/**
+ * Marks a user as suspended or unsuspended.
+ *
+ * @param {string} uid
+ * @param {boolean} suspended
+ * @returns {Promise<object>} Updated user document
+ */
+export const setSuspendedStatus = async (uid, suspended) => {
+  const userRef = db.collection(USERS_COLLECTION).doc(uid);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    const err = new Error("User not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  await userRef.update({ suspended: Boolean(suspended), updatedAt: new Date().toISOString() });
+  const updated = await userRef.get();
+  return updated.data();
+};
+
+/**
+ * Permanently deletes a user document from Firestore.
+ * Does not delete the Firebase Auth account — that requires Admin SDK separately.
+ *
+ * @param {string} uid
+ * @returns {Promise<void>}
+ */
+export const deleteUserById = async (uid) => {
+  const userRef = db.collection(USERS_COLLECTION).doc(uid);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    const err = new Error("User not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  await userRef.delete();
+};
+
 // ─── Affinity weights for real-time learning ─────────────────────────────────
 // These are distinct from the interaction.service ACTION_SCORES which measure
 // individual event value. These weights specifically drive the persistent
 // per-type affinity model that lives on the user document.
 
 export const AFFINITY_WEIGHTS = Object.freeze({
-  view:    1,
-  click:   2,
-  save:    4,   // stronger signal than the transient +3 in ACTION_SCORES
-  dismiss: -3,
+  // Passive
+  view:             1,
+  view_long:        5,
+  // Navigation
+  click:            2,
+  directions:       6,
+  call:             4,
+  share:            4,
+  // Affinity
+  like:             4,
+  save:             7,
+  mark_interested:  3,
+  revisit:          9,
+  // Events
+  open_event:       2,
+  join_event:       8,
+  // Negative
+  dislike:         -7,
+  dismiss:         -4,
+  skip:            -3,
+  not_interested:  -7,
+  remove_save:     -2,
+  // Behavioural
+  search:           0,
+  filter_use:       0,
+  schedule_complete: 9,
+  activity_complete: 9,
 });
 
 /** Maximum absolute value stored in typeAffinity for any single type. */
@@ -190,10 +298,27 @@ const AFFINITY_MAP_RESCALE_THRESHOLD = 45;
 // Values are small deltas applied to the [0, 1] embedding space.
 
 export const EMBEDDING_LEARNING_RATES = Object.freeze({
-  view:    0.03,
-  click:   0.08,
-  save:    0.15,
-  dismiss: -0.10,
+  view:             0.02,
+  view_long:        0.08,
+  click:            0.06,
+  directions:       0.12,
+  call:             0.10,
+  share:            0.08,
+  like:             0.09,
+  save:             0.18,
+  mark_interested:  0.06,
+  revisit:          0.20,
+  open_event:       0.04,
+  join_event:       0.16,
+  dislike:         -0.14,
+  dismiss:         -0.10,
+  skip:            -0.06,
+  not_interested:  -0.14,
+  remove_save:     -0.05,
+  search:           0.00,
+  filter_use:       0.00,
+  schedule_complete: 0.18,
+  activity_complete: 0.18,
 });
 
 /**

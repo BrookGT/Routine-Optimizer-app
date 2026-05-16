@@ -399,22 +399,51 @@ function buildSlotsFromRoutines(routines, profile) {
 }
 
 function buildFallbackSlots(profile) {
-  const { h: wakeH } = parseHHmm(profile?.wakeTime ?? "07:00");
-  const acts = Array.isArray(profile?.weeklyActivities) ? profile.weeklyActivities : [];
-  const has = x => acts.includes(x);
+  const { h: wakeH } = parseHHmm(profile?.wakeTime  ?? "07:00");
+  const { h: bedH  } = parseHHmm(profile?.sleepTime ?? "23:00");
+
+  const acts   = Array.isArray(profile?.weeklyActivities) ? profile.weeklyActivities : [];
+  const has    = x => acts.includes(x);
   const budget = profile?.budgetRange ?? "medium";
+
+  // Morning activity: prefer gym/running/walking based on onboarding
+  const morningActivity =
+    has("gym")      ? "gym"     :
+    has("running")  ? "walk"    :
+    has("yoga")     ? "yoga"    :
+    has("prayer")   ? "prayer"  :
+    has("walking")  ? "walk"    : "walk";
+
+  // Mid-morning: prefer productivity activities
+  const midMorningActivity =
+    has("study")      ? "study"  :
+    has("coding")     ? "study"  :
+    has("work")       ? "work"   :
+    has("reading")    ? "reading":
+    has("meditation") ? "meditation": "coffee";
+
+  // Evening: prefer social/leisure based on onboarding
+  const eveningActivity =
+    has("social")       ? "social"     :
+    has("movies")       ? "cinema"     :
+    has("music")        ? "music"      :
+    has("reading")      ? "reading"    :
+    has("gaming")       ? "gaming"     : "restaurant";
+
+  // Bed time boundary — avoid slots that push past bedtime
+  const eveningHour = Math.min(19, bedH - 3);
 
   const raw = [
     {
       id: "fb-0", period: "morning",
       time: minutesToHHmm(wakeH * 60),
-      activityType: has("gym") ? "gym" : "walk",
+      activityType: morningActivity,
       locationPreference: "outdoor", budgetRange: "low",
     },
     {
       id: "fb-1", period: "morning",
       time: minutesToHHmm(wakeH * 60 + 90),
-      activityType: has("study") ? "study" : has("work") ? "work" : "coffee",
+      activityType: midMorningActivity,
       locationPreference: "indoor", budgetRange: budget,
     },
     {
@@ -425,13 +454,13 @@ function buildFallbackSlots(profile) {
     },
     {
       id: "fb-3", period: "evening",
-      time: "19:00",
-      activityType: has("social") ? "social" : has("cinema") ? "cinema" : "restaurant",
+      time: minutesToHHmm(eveningHour * 60),
+      activityType: eveningActivity,
       locationPreference: "any", budgetRange: budget,
     },
   ];
 
-  // Insert a religious slot if the user has a religion set
+  // Insert a religious slot if the user has a religion set (respect work hours)
   const relType = RELIGION_TO_PLACE_TYPE[(profile?.religion ?? "").toLowerCase()];
   if (relType) {
     raw.push({
@@ -442,14 +471,24 @@ function buildFallbackSlots(profile) {
     });
   }
 
+  // Insert meditation/prayer morning slot if both in activities
+  if (has("meditation") && morningActivity !== "meditation") {
+    raw.push({
+      id: "fb-med", period: "morning",
+      time: minutesToHHmm(wakeH * 60 + 30),
+      activityType: "meditation",
+      locationPreference: "indoor", budgetRange: "low",
+    });
+  }
+
   return raw.map((s, i) => ({
     ...s,
-    source:   "onboarding",
+    source:    "onboarding",
     routineId: null,
-    icon:     activityIcon(s.activityType),
-    color:    ACTIVITY_COLORS[i % ACTIVITY_COLORS.length],
-    title:    buildDisplayTitle(s.activityType, s.period),
-    duration: activityDuration(s.activityType),
+    icon:      activityIcon(s.activityType),
+    color:     ACTIVITY_COLORS[i % ACTIVITY_COLORS.length],
+    title:     buildDisplayTitle(s.activityType, s.period),
+    duration:  activityDuration(s.activityType),
   }));
 }
 
