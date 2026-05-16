@@ -32,6 +32,7 @@ import { getApiErrorMessage } from "../utils/api";
 import Loader from "../components/Loader";
 import DiscoverCard from "../components/DiscoverCard";
 import useLocation from "../hooks/useLocation";
+import { prefetchPlaceDetails } from "../api/placeApi";
 
 // ─── Rank badge (1st / 2nd / 3rd colours) ────────────────────────────────────
 
@@ -77,7 +78,7 @@ function RankBadge({ rank, palette }) {
 
 // ─── Trending card row (rank badge + DiscoverCard) ────────────────────────────
 
-function TrendingRow({ item, rank, palette, onPress, onSave, onDismiss }) {
+function TrendingRow({ item, rank, palette, onPress, onPressIn, onSave, onDismiss }) {
     return (
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
             <RankBadge rank={rank} palette={palette} />
@@ -85,6 +86,7 @@ function TrendingRow({ item, rank, palette, onPress, onSave, onDismiss }) {
                 <DiscoverCard
                     place={item}
                     onPress={onPress}
+                    onPressIn={onPressIn}
                     onSave={onSave}
                     onDismiss={onDismiss}
                 />
@@ -446,6 +448,9 @@ export default function TrendingScreen({ navigation }) {
                                 rank={index + 1}
                                 palette={palette}
                                 onPress={() => handleOpenDetail(item)}
+                                onPressIn={() =>
+                                    prefetchPlaceDetails(item.placeId ?? item.id)
+                                }
                                 onSave={() => handleSave(item)}
                                 onDismiss={() => handleDismiss(item)}
                             />

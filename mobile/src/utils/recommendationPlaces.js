@@ -71,7 +71,20 @@ export function normalisePlace(item, index, meta = null) {
     const pricingReason  = item?.pricingReason ?? null;
     const reason        = item?.reason        ?? null;
     const budgetFit     = typeof item?.budgetFit === "boolean" ? item.budgetFit : null;
-    const matches       = item?.matches       ?? null;   // { budget: bool, religion: bool }
+    const matches       = item?.matches       ?? null;   // { budget, religion, lifestyle }
+
+    // ── Match percentage ────────────────────────────────────────────────────
+    // Prefer the AI-computed match_percent over the rule-level score derivation.
+    const matchPercent  = typeof item?.matchPercent === "number"
+        ? item.matchPercent
+        : typeof numericScore === "number"
+          ? Math.max(1, Math.min(99, Math.round(numericScore)))
+          : null;
+
+    // Override the display score when a numeric matchPercent is available
+    const displayScore = matchPercent != null
+        ? `${matchPercent}% match`
+        : score;
 
     const category = deriveDiscoverCategory({
         ...item,
@@ -90,7 +103,8 @@ export function normalisePlace(item, index, meta = null) {
             item?.description ??
             item?.summary ??
             "Curated place recommendation for you.",
-        score,
+        score: displayScore,
+        matchPercent,
         distance,
         aiInsight,
         // AI enrichment fields are surfaced as first-class so PlaceDetail/PlaceCard
