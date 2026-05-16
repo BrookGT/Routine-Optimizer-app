@@ -19,7 +19,11 @@ import {
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
 import { auth } from "../config/firebase";
-import { getProfile } from "../api/profileApi";
+import {
+    checkUsernameAvailability,
+    getProfile,
+    updateProfile,
+} from "../api/profileApi";
 import { unwrapApiData } from "../utils/api";
 import * as authStorage from "../utils/authStorage";
 
@@ -180,8 +184,30 @@ export function AuthProvider({ children }) {
         await signInWithEmailAndPassword(auth, email.trim(), password);
     }, []);
 
-    const signUpWithEmail = useCallback(async (email, password) => {
-        await createUserWithEmailAndPassword(auth, email.trim(), password);
+    const signUpWithEmail = useCallback(async (email, password, username) => {
+        const credential = await createUserWithEmailAndPassword(
+            auth,
+            email.trim(),
+            password,
+        );
+        const token = await credential.user.getIdToken();
+        await authStorage.setFirebaseToken(token);
+
+        const rawUser = username?.trim().toLowerCase();
+        if (!rawUser) {
+            return;
+        }
+
+        const availability = await checkUsernameAvailability(rawUser);
+        if (!availability?.available) {
+            const err = new Error(
+                "That username is already taken. Try another.",
+            );
+            err.code = "username_taken";
+            throw err;
+        }
+
+        await updateProfile({ username: rawUser });
     }, []);
 
     const signInWithGoogleIdToken = useCallback(async (idToken) => {

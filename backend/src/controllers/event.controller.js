@@ -30,6 +30,19 @@ const AI_SERVICE_ENABLED = process.env.AI_SERVICE_ENABLED !== "false";
 const ok = (res, data, status = 200) => res.status(status).json(data);
 const fail = (res, status, message) => res.status(status).json({ error: message });
 
+/** Express may stringify `category` as a string or (rarely) an array — normalize once. */
+const normalizeCategoryQuery = (raw) => {
+  if (raw == null || raw === "") return undefined;
+  const piece =
+    typeof raw === "string"
+      ? raw
+      : Array.isArray(raw) && raw.length
+        ? String(raw[0])
+        : "";
+  const trimmed = piece.trim().toLowerCase();
+  return trimmed || undefined;
+};
+
 // ─── GET /api/events ──────────────────────────────────────────────────────────
 
 // ─── Haversine distance (km) ─────────────────────────────────────────────────
@@ -49,11 +62,12 @@ export const getEventsHandler = async (req, res, next) => {
   try {
     const { category, dateFrom, dateTo, location, limit, lat, lng } = req.query;
     const filters = {
-      category: category?.toLowerCase(),
+      category: normalizeCategoryQuery(category),
       dateFrom,
       dateTo,
       location,
-      limit: limit ? Math.min(parseInt(limit, 10) || 50, 100) : 50,
+      // Cap high enough for admin dashboards; getAllEvents clamps in the service layer too.
+      limit: limit ? Math.min(parseInt(limit, 10) || 50, 500) : 50,
     };
 
     let events = await getAllEvents(filters);
@@ -97,22 +111,47 @@ export const getRecommendedEventsHandler = async (req, res, next) => {
 
     // Fetch user profile for personalisation
     let userProfile = {
-      interests: [],
-      typeAffinity: {},
-      religion: "",
+      interests:        [],
+      typeAffinity:     {},
+      religion:         "",
+      gender:           "",
       weekendPreference: "",
-      eventInterests: [],
-      dailyRoutine: {},
+      eventInterests:   [],
+      weeklyActivities: [],
+      dailyRoutine:     {},
+      budgetTier:       "",
+      weeklyBudget:     0,
     };
     try {
       const profile = await getUserById(uid);
+
+      // Derive budget tier from numeric weeklyBudget (ETB) or budgetRange label
+      let budgetTier = "";
+      const weekly = profile?.weeklyBudget;
+      if (typeof weekly === "number" && weekly > 0) {
+        if (weekly <= 2000)  budgetTier = "cheap";
+        else if (weekly <= 10000) budgetTier = "mid";
+        else budgetTier = "expensive";
+      } else {
+        const label = (profile?.budgetRange || "").toLowerCase().trim();
+        if (["cheap", "low", "budget", "affordable"].includes(label)) budgetTier = "cheap";
+        else if (["expensive", "high", "luxury", "premium", "flexible"].includes(label)) budgetTier = "expensive";
+        else if (label) budgetTier = "mid";
+      }
+
       userProfile = {
-        interests:        profile?.interests        || [],
-        typeAffinity:     profile?.typeAffinity     || {},
-        religion:         profile?.religion         || "",
+        interests:         Array.isArray(profile?.interests)         ? profile.interests         : [],
+        typeAffinity:      profile?.typeAffinity      || {},
+        religion:          profile?.religion          || "",
+        gender:            profile?.gender            || "",
         weekendPreference: profile?.weekendPreference || "",
-        eventInterests:   profile?.eventInterests   || [],
-        dailyRoutine:     profile?.dailyRoutine     || {},
+        eventInterests:    Array.isArray(profile?.eventInterests)    ? profile.eventInterests    : [],
+        weeklyActivities:  Array.isArray(profile?.weeklyActivities)  ? profile.weeklyActivities  : [],
+        dailyRoutine:      profile?.dailyRoutine      || {},
+        budgetTier,
+        weeklyBudget:      typeof profile?.weeklyBudget === "number" ? profile.weeklyBudget : 0,
+        wakeTime:          profile?.wakeTime          || "",
+        sleepTime:         profile?.sleepTime         || "",
       };
     } catch (err) {
       logger.warn(`[events/recommended] Could not load profile for ${uid}: ${err.message}`);
@@ -125,14 +164,16 @@ export const getRecommendedEventsHandler = async (req, res, next) => {
           user_id: uid,
           user_profile: userProfile,
           events: candidates.map((e) => ({
-            id: e.id,
-            title: e.title || "",
-            category: e.category || "other",
-            date: e.date || "",
-            location: e.location || "",
+            id:          e.id,
+            title:       e.title       || "",
+            category:    e.category    || "other",
+            date:        e.date        || "",
+            location:    e.location    || "",
             description: e.description || "",
-            image: e.image || "",
-            source_url: e.source_url || "",
+            image:       e.image       || "",
+            source_url:  e.source_url  || "",
+            is_paid:     Boolean(e.isPaid    || e.is_paid),
+            price_tier:  e.priceTier   || e.price_tier || "",
           })),
         };
 

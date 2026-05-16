@@ -33,10 +33,33 @@ logger = logging.getLogger(__name__)
 # ─── ACTION_SCORES (mirrors interaction.service.js) ───────────────────────────
 
 ACTION_SCORES: dict[str, int] = {
-    "view":    1,
-    "click":   2,
-    "save":    3,
-    "dismiss": -1,
+    # Passive
+    "view":             1,
+    "view_long":        6,
+    # Navigation intent
+    "click":            2,
+    "directions":       7,
+    "call":             5,
+    "share":            5,
+    # Affinity
+    "like":             5,
+    "save":             8,
+    "mark_interested":  4,
+    "revisit":         10,
+    # Events
+    "open_event":       3,
+    "join_event":       9,
+    # Negative
+    "dislike":         -8,
+    "dismiss":         -6,
+    "skip":            -5,
+    "not_interested":  -8,
+    "remove_save":     -3,
+    # Behavioural
+    "search":           1,
+    "filter_use":       1,
+    "schedule_complete": 10,
+    "activity_complete": 10,
 }
 
 # ─── Firebase initialisation (idempotent) ─────────────────────────────────────
@@ -248,12 +271,16 @@ def build_dataset(raw: dict) -> list[dict]:
         user_emb = user.get("embedding") or {}
         emb_val  = user_emb.get(place_type, 0)
 
-        # Onboarding profile enrichment fields (new — default to empty/neutral when absent)
+        # Onboarding profile enrichment fields (v3 — default to empty/neutral when absent)
         religion            = user.get("religion", "") or ""
+        gender              = user.get("gender", "") or ""
         weekend_preference  = user.get("weekendPreference", "") or ""
         event_interests     = user.get("eventInterests") or []
         daily_routine       = user.get("dailyRoutine") or {}
         working_hours_flex  = (user.get("workingHours") or {}).get("flexible", True)
+        wake_time           = user.get("wakeTime", "") or ""
+        sleep_time          = user.get("sleepTime", "") or ""
+        weekly_activities   = user.get("weeklyActivities") or []
 
         dataset.append({
             "user_id":              uid,
@@ -266,12 +293,16 @@ def build_dataset(raw: dict) -> list[dict]:
             "session_intent":       session_intent,
             "type_affinity":        float(type_affinity),
             "embedding_score":      float(emb_val),
-            # Onboarding signals — used in future model versions for richer features
+            # Onboarding signals (v3) — richer lifestyle context for future model versions
             "religion":             religion,
+            "gender":               gender,
             "weekend_preference":   weekend_preference,
             "event_interests":      event_interests,
             "has_daily_routine":    bool(daily_routine),
             "working_hours_flex":   bool(working_hours_flex),
+            "wake_time":            wake_time,
+            "sleep_time":           sleep_time,
+            "weekly_activities":    weekly_activities,
         })
 
     logger.info(f"[pipeline] dataset built: {len(dataset)} rows")

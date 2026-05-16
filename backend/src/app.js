@@ -18,7 +18,6 @@ import eventRouter from "./routes/event.routes.js";
 import devRouter from "./routes/dev.routes.js";
 import adminRouter from "./routes/admin.routes.js";
 import aiRouter from "./routes/ai.routes.js";
-import placesRouter from "./routes/places.routes.js";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler.js";
 import { initModelCache } from "./services/ai/modelService.js";
 import { logger } from "./utils/logger.js";
@@ -50,8 +49,10 @@ app.use(express.json({ limit: "50kb" }));
 app.use(express.urlencoded({ extended: true, limit: "50kb" }));
 
 // CORS — origins are controlled via the ALLOWED_ORIGINS environment variable
+const normalizeOrigin = (value) => (value || "").replace(/\/+$/, "");
+
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
+  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => normalizeOrigin(o.trim())).filter(Boolean)
   : [];
 
 app.use(
@@ -60,10 +61,12 @@ app.use(
       if (allowedOrigins.length === 0) return callback(null, true);
       // Allow requests with no origin (e.g. mobile apps, curl, Postman)
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (allowedOrigins.includes(normalizeOrigin(origin))) return callback(null, true);
       callback(new Error(`CORS policy: origin ${origin} is not allowed`));
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 

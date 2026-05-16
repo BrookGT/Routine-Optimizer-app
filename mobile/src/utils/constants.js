@@ -61,8 +61,31 @@ export const GOOGLE_WEB_CLIENT_ID =
     process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? "";
 
 export const INTERACTION_TYPES = {
-    VIEW: "view",
-    CLICK: "click",
-    SAVE: "save",
-    DISMISS: "dismiss",
+    // Passive
+    VIEW:              "view",
+    VIEW_LONG:         "view_long",
+    // Navigation intent
+    CLICK:             "click",
+    DIRECTIONS:        "directions",
+    CALL:              "call",
+    SHARE:             "share",
+    // Affinity
+    LIKE:              "like",
+    SAVE:              "save",
+    MARK_INTERESTED:   "mark_interested",
+    REVISIT:           "revisit",
+    // Events
+    OPEN_EVENT:        "open_event",
+    JOIN_EVENT:        "join_event",
+    // Negative
+    DISLIKE:           "dislike",
+    DISMISS:           "dismiss",
+    SKIP:              "skip",
+    NOT_INTERESTED:    "not_interested",
+    REMOVE_SAVE:       "remove_save",
+    // Behavioural
+    SEARCH:            "search",
+    FILTER_USE:        "filter_use",
+    SCHEDULE_COMPLETE: "schedule_complete",
+    ACTIVITY_COMPLETE: "activity_complete",
 };

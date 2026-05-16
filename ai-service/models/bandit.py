@@ -33,12 +33,49 @@ import config
 logger = logging.getLogger(__name__)
 
 # ─── Reward deltas (scale into meaningful Beta increments) ────────────────────
+# Positive actions increase α (probability of reward).
+# Dismiss/negative actions increase β (probability of failure).
+# Zero-delta actions have no effect on the arm; β-only negative actions
+# are handled in the update() method via the `_BETA_BUMP` map below.
 
 _REWARD_DELTAS: dict[str, float] = {
-    "save":    3.0,
-    "click":   2.0,
-    "view":    1.0,
-    "dismiss": 0.0,   # handled via β update instead
+    # Passive
+    "view":             0.5,
+    "view_long":        2.5,
+    # Navigation intent
+    "click":            1.0,
+    "directions":       3.0,
+    "call":             2.0,
+    "share":            2.0,
+    # Affinity
+    "like":             2.0,
+    "save":             4.0,
+    "mark_interested":  1.5,
+    "revisit":          5.0,
+    # Events
+    "open_event":       1.0,
+    "join_event":       4.5,
+    # Completions
+    "schedule_complete": 4.0,
+    "activity_complete": 4.0,
+    # Negative (α delta ignored, β handled separately)
+    "dislike":          0.0,
+    "dismiss":          0.0,
+    "skip":             0.0,
+    "not_interested":   0.0,
+    "remove_save":      0.0,
+    # Neutral
+    "search":           0.0,
+    "filter_use":       0.0,
+}
+
+# How much to bump β for negative signals.
+_BETA_BUMPS: dict[str, float] = {
+    "dismiss":        1.0,
+    "dislike":        2.0,
+    "skip":           0.7,
+    "not_interested": 2.0,
+    "remove_save":    0.5,
 }
 
 # ─── Types ────────────────────────────────────────────────────────────────────
@@ -88,10 +125,14 @@ class BanditModel:
         """
         Updates the Beta distribution for a user-arm pair based on an
         observed interaction.
+
+        Positive signals increase α (engagement probability).
+        Negative signals increase β (rejection probability).
         """
         arm = self._get_arm(user_id, place_type, create=True)
-        if action_type == "dismiss":
-            arm["beta"] = min(arm["beta"] + 1.0, 1000.0)
+        beta_bump = _BETA_BUMPS.get(action_type, 0.0)
+        if beta_bump > 0:
+            arm["beta"] = min(arm["beta"] + beta_bump, 1000.0)
         else:
             delta = _REWARD_DELTAS.get(action_type, 0.0)
             if delta > 0:
@@ -106,12 +147,13 @@ class BanditModel:
 
         Returns number of updates applied.
         """
+        _all_known = set(_REWARD_DELTAS) | set(_BETA_BUMPS)
         count = 0
         for ix in interactions:
             uid    = ix.get("userId") or ix.get("user_id")
             pid    = ix.get("placeId") or ix.get("place_id")
             action = ix.get("actionType") or ix.get("action_type")
-            if not uid or not pid or action not in _REWARD_DELTAS:
+            if not uid or not pid or action not in _all_known:
                 continue
             place = places.get(pid)
             if not place:

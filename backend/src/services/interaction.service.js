@@ -55,12 +55,40 @@ const experimentStampForUser = (userId) => {
   };
 };
 
-/** Allowed actionType values and their corresponding scores. */
+/**
+ * Allowed actionType values and their corresponding log scores.
+ *
+ * Weights reflect the strength of the signal for ML learning.
+ * Positive = engagement/preference, Negative = rejection.
+ */
 export const ACTION_SCORES = Object.freeze({
-  view:    1,
-  click:   2,
-  save:    3,
-  dismiss: -1,
+  // ── Neutral / passive ──────────────────────────────────────────────────────
+  view:             1,   // short passive view
+  view_long:        6,   // spent meaningful time on detail page (+6)
+  // ── Navigation intent ──────────────────────────────────────────────────────
+  click:            2,   // tapped to open (open details)
+  directions:       7,   // opened directions — very strong intent
+  call:             5,   // tapped to call the place
+  share:            5,   // shared recommendation
+  // ── Affinity ───────────────────────────────────────────────────────────────
+  like:             5,   // explicit like
+  save:             8,   // saved to favourites (strong positive)
+  mark_interested:  4,   // marked as interested
+  revisit:         10,   // returned to a place they already visited
+  // ── Event specific ─────────────────────────────────────────────────────────
+  open_event:       3,   // opened event detail
+  join_event:       9,   // joined / RSVP'd an event
+  // ── Negative signals ───────────────────────────────────────────────────────
+  dislike:         -8,   // explicit dislike
+  dismiss:         -6,   // swiped away
+  skip:            -5,   // skipped in feed (repeated skips compound)
+  not_interested:  -8,   // explicit "not for me"
+  remove_save:     -3,   // unsaved a previously saved place
+  // ── Implicit / behavioural ─────────────────────────────────────────────────
+  search:           1,   // searched for a term
+  filter_use:       1,   // used a filter
+  schedule_complete: 10, // completed a scheduled activity
+  activity_complete: 10, // completed a daily activity
 });
 
 // ─── Place-type resolver ──────────────────────────────────────────────────────

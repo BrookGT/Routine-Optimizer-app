@@ -1,5 +1,5 @@
 """
-learning/realtime.py — Online updates to the bandit + auto-persist.
+learning/realtime.py — Online updates to the bandit + preference vectors + auto-persist.
 
 The Python AI service previously only learned during full /train
 batches. This module lets a single interaction update the bandit
@@ -10,11 +10,17 @@ immediately:
         "place_id": "p_42",
         "place_type": "coffee",
         "action_type": "save",
+        "hour": 9,          # optional: local hour (0-23) for time-aware learning
+        "day_type": "weekday" # optional: "weekday" | "weekend"
     })
 
 After every successful update we schedule an asynchronous flush of the
 bandit state to disk (debounced, so a burst of interactions writes only
 once every BANDIT_PERSIST_INTERVAL_SEC).
+
+Time-aware learning: interactions are bucketed into time_of_day slots
+(morning / afternoon / evening / night) and separately for weekday /
+weekend.  The preference vector for each user is updated accordingly.
 
 Sequence model state isn't updated incrementally (training the GRU on
 single examples is unstable); instead, it's refreshed during the
@@ -29,6 +35,7 @@ import logging
 import os
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from models.bandit import get_bandit
@@ -38,6 +45,110 @@ logger = logging.getLogger(__name__)
 
 # How often to persist bandit state to disk (debounced).
 _PERSIST_INTERVAL_SEC = float(os.getenv("BANDIT_PERSIST_INTERVAL_SEC", "30"))
+
+# ─── In-memory preference vector store ──────────────────────────────────────
+# {user_id: {"category": float, ...}}  — category affinity confidence in [0,1]
+_preference_vectors: dict[str, dict[str, float]] = {}
+_pref_lock = threading.Lock()
+
+# Time-of-day slot mapping
+def _time_slot(hour: int) -> str:
+    if 5 <= hour < 12:   return "morning"
+    if 12 <= hour < 17:  return "afternoon"
+    if 17 <= hour < 22:  return "evening"
+    return "night"
+
+# Weights mapping action_type → signal strength for preference vectors
+_PREF_SIGNAL: dict[str, float] = {
+    "view":             0.02,
+    "view_long":        0.08,
+    "click":            0.04,
+    "directions":       0.12,
+    "call":             0.10,
+    "share":            0.08,
+    "like":             0.09,
+    "save":             0.18,
+    "mark_interested":  0.06,
+    "revisit":          0.20,
+    "open_event":       0.04,
+    "join_event":       0.18,
+    "schedule_complete": 0.18,
+    "activity_complete": 0.18,
+    "dislike":         -0.14,
+    "dismiss":         -0.10,
+    "skip":            -0.06,
+    "not_interested":  -0.14,
+    "remove_save":     -0.05,
+}
+
+
+def update_preference_vector(user_id: str, place_type: str, action_type: str,
+                              hour: int | None = None, day_type: str = "weekday") -> dict:
+    """
+    Update the in-memory preference vector for a user.
+    Returns the updated preference snapshot for this category.
+    """
+    delta = _PREF_SIGNAL.get(action_type, 0.0)
+    if delta == 0.0:
+        return {}
+
+    with _pref_lock:
+        if user_id not in _preference_vectors:
+            _preference_vectors[user_id] = {}
+        vec = _preference_vectors[user_id]
+
+        # Base category affinity
+        old = vec.get(place_type, 0.5)
+        vec[place_type] = max(0.0, min(1.0, old + delta))
+
+        # Time-aware sub-key: category_morning, category_weekend, etc.
+        if hour is not None:
+            slot = _time_slot(hour)
+            tkey = f"{place_type}_{slot}"
+            vec[tkey] = max(0.0, min(1.0, vec.get(tkey, 0.5) + delta * 0.7))
+
+        if day_type == "weekend":
+            wkey = f"{place_type}_weekend"
+            vec[wkey] = max(0.0, min(1.0, vec.get(wkey, 0.5) + delta * 0.8))
+
+        return {"category": place_type, "affinity": round(vec[place_type], 4)}
+
+
+def get_preference_vector(user_id: str) -> dict[str, float]:
+    """Return a copy of the user's current preference vector."""
+    with _pref_lock:
+        return dict(_preference_vectors.get(user_id, {}))
+
+
+def get_top_categories(user_id: str, n: int = 5) -> list[tuple[str, float]]:
+    """Return the top-N categories by affinity score (highest first)."""
+    vec = get_preference_vector(user_id)
+    # Only base keys (not time-slotted sub-keys)
+    base = {k: v for k, v in vec.items() if "_" not in k}
+    return sorted(base.items(), key=lambda x: x[1], reverse=True)[:n]
+
+
+def generate_explanation(user_id: str, place_type: str) -> str | None:
+    """
+    Generate a natural-language explanation for why a place is recommended.
+    Returns None when there is not enough signal yet.
+    """
+    vec = get_preference_vector(user_id)
+    top = get_top_categories(user_id, 3)
+
+    affinity = vec.get(place_type, 0.5)
+
+    if affinity >= 0.80:
+        return f"Recommended because you consistently engage with {place_type} places."
+    if affinity >= 0.65:
+        return f"Matches your strong preference for {place_type}."
+
+    if top:
+        top_cat, top_score = top[0]
+        if top_score >= 0.70:
+            return f"Based on your frequent interest in {top_cat} and similar places."
+
+    return None
 
 _state_lock     = threading.Lock()
 _dirty          = False
@@ -77,32 +188,62 @@ def _schedule_persist() -> None:
 
 
 def _normalize_action(action: str) -> str:
-    """Normalize aliases to bandit-recognized action types."""
+    """Normalize legacy/alias action type strings to canonical ones."""
     a = (action or "").strip().lower()
     aliases = {
-        "like":     "save",
-        "favourite": "save",
-        "favorite": "save",
-        "tap":      "click",
-        "open":     "click",
-        "skip":     "dismiss",
-        "ignore":   "dismiss",
-        "hide":     "dismiss",
+        # legacy compat
+        "like":       "like",
+        "favourite":  "save",
+        "favorite":   "save",
+        "tap":        "click",
+        "open":       "click",
+        "ignore":     "dismiss",
+        "hide":       "dismiss",
+        # mobile sends these verbatim
+        "view_long":        "view_long",
+        "directions":       "directions",
+        "call":             "call",
+        "share":            "share",
+        "mark_interested":  "mark_interested",
+        "revisit":          "revisit",
+        "open_event":       "open_event",
+        "join_event":       "join_event",
+        "dislike":          "dislike",
+        "skip":             "skip",
+        "not_interested":   "not_interested",
+        "remove_save":      "remove_save",
+        "search":           "search",
+        "filter_use":       "filter_use",
+        "schedule_complete": "schedule_complete",
+        "activity_complete": "activity_complete",
     }
     return aliases.get(a, a)
 
 
+# All known canonical action types
+_KNOWN_ACTIONS = frozenset({
+    "view", "view_long", "click", "directions", "call", "share",
+    "like", "save", "mark_interested", "revisit",
+    "open_event", "join_event",
+    "dislike", "dismiss", "skip", "not_interested", "remove_save",
+    "search", "filter_use", "schedule_complete", "activity_complete",
+})
+
+
 def apply_feedback(payload: dict[str, Any]) -> dict[str, Any]:
     """
-    Apply a single interaction to the bandit.
+    Apply a single interaction to the bandit and preference vector.
 
     Required keys:
       user_id     - string
       place_type  - string (e.g. 'gym', 'coffee')
-      action_type - one of {'view','click','save','dismiss'} or aliases
+      action_type - one of the canonical INTERACTION_TYPES or aliases
 
     Optional keys:
-      place_id, score, timestamp — accepted but unused for bandit update.
+      place_id  - logged only
+      hour      - local hour (0-23) for time-aware learning
+      day_type  - "weekday" | "weekend"
+      metadata  - ignored
 
     Returns:
       {
@@ -112,12 +253,21 @@ def apply_feedback(payload: dict[str, Any]) -> dict[str, Any]:
         "action_type": str,
         "alpha": float,
         "beta":  float,
-        "bandit_score": float
+        "bandit_score": float,
+        "affinity": float,
+        "explanation": str | None
       }
     """
     user_id    = str(payload.get("user_id") or payload.get("userId") or "")
     place_type = str(payload.get("place_type") or payload.get("placeType") or "")
     action     = _normalize_action(payload.get("action_type") or payload.get("actionType") or "")
+    hour_raw   = payload.get("hour")
+    day_type   = str(payload.get("day_type") or "weekday")
+
+    try:
+        hour = int(hour_raw) if hour_raw is not None else datetime.now(timezone.utc).hour
+    except (TypeError, ValueError):
+        hour = datetime.now(timezone.utc).hour
 
     if not user_id or not place_type or not action:
         return {
@@ -127,7 +277,7 @@ def apply_feedback(payload: dict[str, Any]) -> dict[str, Any]:
             "place_type": place_type,
             "action_type": action,
         }
-    if action not in ("view", "click", "save", "dismiss"):
+    if action not in _KNOWN_ACTIONS:
         return {
             "updated": False,
             "reason":  f"invalid_action_type:{action}",
@@ -136,13 +286,19 @@ def apply_feedback(payload: dict[str, Any]) -> dict[str, Any]:
             "action_type": action,
         }
 
+    # ── 1. Bandit update ──────────────────────────────────────────────────────
     bandit = get_bandit()
     bandit.update(user_id, place_type, action)
 
-    # Read back the updated arm for logging / response transparency
     arm = bandit._get_arm(user_id, place_type)  # noqa: SLF001 — internal but stable
     a, b = arm["alpha"], arm["beta"]
-    score = a / (a + b)
+    bandit_score = a / (a + b)
+
+    # ── 2. Preference vector update ───────────────────────────────────────────
+    pref_update = update_preference_vector(user_id, place_type, action, hour, day_type)
+
+    # ── 3. Explanation ────────────────────────────────────────────────────────
+    explanation = generate_explanation(user_id, place_type)
 
     global _dirty
     with _state_lock:
@@ -150,8 +306,9 @@ def apply_feedback(payload: dict[str, Any]) -> dict[str, Any]:
     _schedule_persist()
 
     logger.info(
-        "[learning] feedback applied uid=%s type=%s action=%s alpha=%.2f beta=%.2f score=%.3f",
-        user_id, place_type, action, a, b, score,
+        "[learning] uid=%s type=%s action=%s bandit=%.3f affinity=%.3f",
+        user_id, place_type, action, bandit_score,
+        pref_update.get("affinity", 0.0),
     )
 
     return {
@@ -161,7 +318,9 @@ def apply_feedback(payload: dict[str, Any]) -> dict[str, Any]:
         "action_type":  action,
         "alpha":        round(a, 3),
         "beta":         round(b, 3),
-        "bandit_score": round(score, 4),
+        "bandit_score": round(bandit_score, 4),
+        "affinity":     pref_update.get("affinity", 0.0),
+        "explanation":  explanation,
     }
 
 

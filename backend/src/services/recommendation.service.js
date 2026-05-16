@@ -123,6 +123,8 @@ import {
   computeContextStackBoost,
   topWeightsForMeta,
   enforceMaxSameTypeInTopN,
+  weeklyActivitiesBoost,
+  genderContextScore,
 } from "../utils/personalization.js";
 import {
   isExperimentActive,
@@ -280,14 +282,35 @@ const callAiService = async (
       session_intent:     context.detectedIntent || "explore",
       recent_types:       recentTypes,
       type_affinity:      normAffinity,
-      // Onboarding signals (standardized AI input)
+      // Onboarding signals (standardized AI input — keep in sync with predict.py ContextIn)
       budget:             budgetTier,
       weekly_budget:      typeof profile?.weeklyBudget === "number" ? profile.weeklyBudget : null,
       budget_range:       profile?.budgetRange || "",
       religion:           profile?.religion || "",
+      gender:             profile?.gender || "",
       weekend_preference: profile?.weekendPreference || "",
       event_interests:    Array.isArray(profile?.eventInterests) ? profile.eventInterests : [],
       interests:          Array.isArray(profile?.interests) ? profile.interests : [],
+      weekly_activities:  Array.isArray(profile?.weeklyActivities) ? profile.weeklyActivities : [],
+      daily_routine:      profile?.dailyRoutine && typeof profile.dailyRoutine === "object"
+                            ? profile.dailyRoutine
+                            : {},
+      wake_time:          profile?.wakeTime || "",
+      sleep_time:         profile?.sleepTime || "",
+      // workingHours is an object ({flexible, morning, afternoon}) — serialize to a
+      // plain string so Pydantic Optional[str] validation never rejects with 422.
+      working_hours: (() => {
+        const wh = profile?.workingHours;
+        if (!wh) return "";
+        if (typeof wh === "string") return wh;
+        if (wh.flexible) return "flexible";
+        // Build "HH:mm-HH:mm" from the first available period
+        const morning   = wh.morning   || wh.am || null;
+        const afternoon = wh.afternoon || wh.pm || null;
+        const period    = morning || afternoon;
+        if (period?.start && period?.end) return `${period.start}-${period.end}`;
+        return "fixed";
+      })(),
       explain:            explainEnabled,
       ...(context.discoverCategoryKey
         ? { discover_category: context.discoverCategoryKey }
@@ -326,14 +349,17 @@ const callAiService = async (
         : Boolean(item.price_level);
       enrichmentMap.set(item.place_id, {
         pricingEnabled,
-        pricingReason: item.pricing_reason ?? null,
-        priceLevel: pricingEnabled ? (item.price_level ?? null) : null,
+        pricingReason:  item.pricing_reason  ?? null,
+        priceLevel:     pricingEnabled ? (item.price_level ?? null) : null,
         priceConfidence: item.price_confidence ?? 0,
-        priceSignals: item.price_signals ?? [],
-        estimatedCost: pricingEnabled ? (item.estimated_cost ?? {}) : {},
-        priceCategory: item.price_category ?? "dining",
-        reason: item.reason ?? null,
-        budgetFit: item.budget_fit !== false,
+        priceSignals:   item.price_signals    ?? [],
+        estimatedCost:  pricingEnabled ? (item.estimated_cost ?? {}) : {},
+        priceCategory:  item.price_category   ?? "dining",
+        reason:         item.reason           ?? null,
+        budgetFit:      item.budget_fit       !== false,
+        religionMatch:  item.religion_match   !== false,
+        lifestyleMatch: item.lifestyle_match  === true,
+        matchPercent:   typeof item.match_percent === "number" ? item.match_percent : null,
       });
     }
     logger.debug(`[AI] /predict OK — ${scoreMap.size} scores in ${data.inference_ms}ms (budget=${budgetTier})`);
@@ -960,6 +986,9 @@ export const scorePlaceForUser = (
     interestWeightUsed:  0,   // weight of this place's type when boosted (debug)
     habitContextBoost:   0,   // current context matches detected habit + type
     contextStackBoost:   0,   // compound session + intent + habit/weight
+    // ── v17 onboarding-driven fields ──────────────────────
+    activitiesBoost:     0,   // weeklyActivities → place type match
+    genderPenalty:       0,   // gender-incompatible place penalty
   };
 
   const locationType = resolveLocationType(place);
@@ -1211,6 +1240,23 @@ export const scorePlaceForUser = (
     WEIGHTS.contextStackBoostMax
   );
 
+  // ── Rule 28 (v17): Weekly activities → place type alignment ──────────────────
+  // User's declared weekly activities (onboarding) mapped to place types.
+  // Each matching activity contributes +2 pts, capped at +5.
+  breakdown.activitiesBoost = weeklyActivitiesBoost(
+    place.type,
+    profile?.weeklyActivities ?? []
+  );
+
+  // ── Rule 29 (v17): Gender context penalty ─────────────────────────────────────
+  // Apply a penalty when a gender-specific place type mismatches the user's gender.
+  // Only covers clearly exclusive places (ladies salon, barbershop, etc.).
+  breakdown.genderPenalty = genderContextScore(
+    place.type,
+    place.name || "",
+    profile?.gender || ""
+  );
+
   const rawScore =
     breakdown.routineMatch      +
     breakdown.budgetMatch       +
@@ -1240,7 +1286,9 @@ export const scorePlaceForUser = (
     breakdown.repeatPenalty      +
     breakdown.multiInterestBoost +
     breakdown.habitContextBoost  +
-    breakdown.contextStackBoost;
+    breakdown.contextStackBoost  +
+    breakdown.activitiesBoost    +
+    breakdown.genderPenalty;
 
   // ── Rule 25 (v12 UPDATED): AI model score ─────────────────────────────────
   // Builds the 10-dimensional feature vector matching Phase 12's
@@ -1869,10 +1917,26 @@ export const getRecommendations = async (
 
     const pricingEnabled = place._pricingEnabled === true;
     const fastPrice = pricingEnabled ? (place._fastPriceLevel || "mid") : null;
+    const religionAllowed = placeAllowedByReligion(place, userReligion);
+    const lifestyleMatch  = (breakdown.activitiesBoost ?? 0) > 0;
+
     const placeMatch = {
-      budget: !pricingEnabled || tierToNumber(fastPrice) <= _userBudgetLevel,
-      religion: placeAllowedByReligion(place, userReligion),
+      budget:    !pricingEnabled || tierToNumber(fastPrice) <= _userBudgetLevel,
+      religion:  religionAllowed,
+      lifestyle: lifestyleMatch,
     };
+
+    // Build a simple pre-AI match percent from rule-level signals only.
+    // Will be overwritten by the AI service's richer match_percent when available.
+    const ruleMatchPct = (() => {
+      let pts = 0;
+      if (placeMatch.budget)    pts += 30;
+      if (placeMatch.religion)  pts += 30;
+      if (lifestyleMatch)       pts += 20;
+      if ((breakdown.genderPenalty ?? 0) === 0) pts += 10;
+      pts += Math.round((normalizedScore / 100) * 10);
+      return Math.min(100, pts);
+    })();
 
     const entry = {
       id:         place.id,
@@ -1883,6 +1947,7 @@ export const getRecommendations = async (
       trendScore: place.trendScore  ?? 0,
       rating:     place.rating      ?? 3.0,
       distanceKm: place.distanceKm  ?? null,
+      matchPercent: ruleMatchPct,
       images,
       photoReferences: photoRefs.length ? photoRefs.slice(0, 5) : undefined,
       // Carry through fields used for AI pricing/RAG (consumed by callAiService).
@@ -1981,9 +2046,11 @@ export const getRecommendations = async (
             entry.priceCategory = enrichment.priceCategory ?? entry.priceCategory;
             if (enrichment.reason) entry.reason = enrichment.reason;
             entry.matches = {
-              budget: true,
-              religion: entry.matches?.religion ?? true,
+              budget:    true,
+              religion:  enrichment.religionMatch  ?? entry.matches?.religion  ?? true,
+              lifestyle: enrichment.lifestyleMatch ?? entry.matches?.lifestyle ?? false,
             };
+            if (enrichment.matchPercent != null) entry.matchPercent = enrichment.matchPercent;
           } else {
             entry.priceLevel = enrichment.priceLevel ?? entry.priceLevel;
             entry.priceSource = "ai_classifier";
@@ -1995,9 +2062,11 @@ export const getRecommendations = async (
             }
             if (enrichment.reason) entry.reason = enrichment.reason;
             entry.matches = {
-              budget: tierToNumber(entry.priceLevel || "mid") <= _userBudgetLevel,
-              religion: entry.matches?.religion ?? true,
+              budget:    tierToNumber(entry.priceLevel || "mid") <= _userBudgetLevel,
+              religion:  enrichment.religionMatch  ?? entry.matches?.religion  ?? true,
+              lifestyle: enrichment.lifestyleMatch ?? entry.matches?.lifestyle ?? false,
             };
+            if (enrichment.matchPercent != null) entry.matchPercent = enrichment.matchPercent;
           }
         }
 

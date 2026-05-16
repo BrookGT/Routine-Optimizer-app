@@ -160,6 +160,67 @@ export const getPlacesByType = async (type) => {
   return all.filter((p) => p.type === type);
 };
 
+// ─── Admin CRUD ───────────────────────────────────────────────────────────────
+
+/**
+ * Creates a new place document in Firestore.
+ *
+ * @param {object} data - place fields (name, type, priceRange, location, tags, etc.)
+ * @returns {Promise<object>} The created place document with its generated id.
+ */
+export const createPlace = async (data) => {
+  validatePlace(data);
+  const docRef = db.collection(PLACES_COLLECTION).doc();
+  const now = new Date().toISOString();
+  const doc = { ...data, id: docRef.id, createdAt: now, updatedAt: now };
+  await docRef.set(doc);
+  invalidateCache();
+  return doc;
+};
+
+/**
+ * Updates mutable fields of an existing place document.
+ *
+ * @param {string} placeId
+ * @param {object} updates
+ * @returns {Promise<object>} The updated place document.
+ */
+export const updatePlace = async (placeId, updates) => {
+  const docRef = db.collection(PLACES_COLLECTION).doc(placeId);
+  const snap = await docRef.get();
+  if (!snap.exists) {
+    const err = new Error("Place not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  const now = new Date().toISOString();
+  const safeUpdates = { ...updates, updatedAt: now };
+  delete safeUpdates.id;
+  delete safeUpdates.createdAt;
+  await docRef.update(safeUpdates);
+  invalidateCache();
+  const updated = await docRef.get();
+  return { ...updated.data(), id: docRef.id };
+};
+
+/**
+ * Deletes a place document by ID.
+ *
+ * @param {string} placeId
+ * @returns {Promise<void>}
+ */
+export const deletePlaceById = async (placeId) => {
+  const docRef = db.collection(PLACES_COLLECTION).doc(placeId);
+  const snap = await docRef.get();
+  if (!snap.exists) {
+    const err = new Error("Place not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  await docRef.delete();
+  invalidateCache();
+};
+
 // ─── Seeding ──────────────────────────────────────────────────────────────────
 
 /**

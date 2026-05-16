@@ -38,6 +38,8 @@ const isFeedbackEnabled = () =>
  *   placeId:    string|null,
  *   placeType:  string|null,
  *   actionType: string,
+ *   hour?:      number,       // local hour 0-23 for time-aware learning
+ *   dayType?:   string,       // "weekday" | "weekend"
  * }} event
  * @returns {Promise<{ ok: boolean, status?: number, body?: any, error?: string }>}
  */
@@ -46,10 +48,17 @@ export const sendInteractionFeedback = async ({
   placeId,
   placeType,
   actionType,
+  hour,
+  dayType,
 }) => {
   if (!isFeedbackEnabled())     return { ok: false, error: "disabled" };
   if (!userId || !actionType)   return { ok: false, error: "missing_required" };
   if (!placeType)               return { ok: false, error: "missing_place_type" };
+
+  const now = new Date();
+  const localHour  = hour     ?? now.getHours();
+  const isWeekend  = [0, 6].includes(now.getDay());
+  const resolvedDayType = dayType ?? (isWeekend ? "weekend" : "weekday");
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AI_FEEDBACK_TIMEOUT);
@@ -63,6 +72,8 @@ export const sendInteractionFeedback = async ({
         place_id:    placeId || "",
         place_type:  placeType,
         action_type: actionType,
+        hour:        localHour,
+        day_type:    resolvedDayType,
       }),
       signal: controller.signal,
     });
@@ -101,6 +112,11 @@ export const sendInteractionFeedback = async ({
 export const sendInteractionFeedbackBatch = async (events) => {
   if (!isFeedbackEnabled() || !events?.length) return { ok: false, error: "disabled" };
 
+  const now        = new Date();
+  const localHour  = now.getHours();
+  const isWeekend  = [0, 6].includes(now.getDay());
+  const dayType    = isWeekend ? "weekend" : "weekday";
+
   const items = events
     .filter((e) => e?.userId && e?.actionType && e?.placeType)
     .map((e) => ({
@@ -108,6 +124,8 @@ export const sendInteractionFeedbackBatch = async (events) => {
       place_id:    e.placeId || "",
       place_type:  e.placeType,
       action_type: e.actionType,
+      hour:        localHour,
+      day_type:    dayType,
     }));
 
   if (!items.length) return { ok: false, error: "no_valid_items" };
