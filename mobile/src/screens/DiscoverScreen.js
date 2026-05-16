@@ -35,6 +35,17 @@ import { getApiErrorMessage } from "../utils/api";
 import Loader from "../components/Loader";
 import DiscoverCard from "../components/DiscoverCard";
 import useLocation from "../hooks/useLocation";
+import { prefetchPlaceDetails } from "../api/placeApi";
+import { prefetchEventById } from "../api/eventsApi";
+
+function prefetchDiscoverDetail(place) {
+    if (!place) return;
+    if (place.category === "event" && place._eventForDetail?.id) {
+        prefetchEventById(place._eventForDetail.id);
+        return;
+    }
+    prefetchPlaceDetails(place.placeId ?? place.id);
+}
 
 // ─── Filter definitions (keys must match backend `discoverCategory` + `resolveDiscoverFilter`) ──
 
@@ -403,6 +414,8 @@ export default function DiscoverScreen({ navigation, route }) {
 
     const [selectedFilter, setSelectedFilter] = useState("all");
     const [places, setPlaces] = useState([]);
+    const [likedPlaceIds, setLikedPlaceIds] = useState(() => new Set());
+    const [savedPlaceIds, setSavedPlaceIds] = useState(() => new Set());
     const [aiMeta, setAiMeta] = useState(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -590,36 +603,48 @@ export default function DiscoverScreen({ navigation, route }) {
         navigation.navigate("PlaceDetail", { place });
     }
 
-    async function handleSave(place) {
-        try {
-            await createInteraction({
-                placeId: place.placeId,
-                actionType: INTERACTION_TYPES.SAVE,
-                metadata: { source: "discover_feed", filter: selectedFilter, place },
-            });
-            Alert.alert(
-                "Saved",
-                "Place added to your saved list. View it anytime under Profile → Saved places.",
-            );
-            scheduleRefresh();
-        } catch (err) {
-            Alert.alert("Unable to save", getApiErrorMessage(err));
-        }
+    function handleSave(place) {
+        const id = place.placeId ?? place.id;
+        setSavedPlaceIds((prev) => {
+            const next = new Set(prev);
+            next.add(id);
+            return next;
+        });
+        createInteraction({
+            placeId: id,
+            actionType: INTERACTION_TYPES.SAVE,
+            metadata: { source: "discover_feed", filter: selectedFilter },
+        }).catch(() => null);
+        scheduleRefresh();
     }
 
-    async function handleDismiss(place) {
-        try {
-            await createInteraction({
-                placeId: place.placeId,
-                actionType: INTERACTION_TYPES.DISMISS,
-                metadata: { source: "discover_feed", filter: selectedFilter, place },
-            });
-            setPlaces((curr) =>
-                curr.filter((p) => p.placeId !== place.placeId),
-            );
+    function handleDismiss(place) {
+        const id = place.placeId ?? place.id;
+        setPlaces((curr) => curr.filter((p) => (p.placeId ?? p.id) !== id));
+        createInteraction({
+            placeId: id,
+            actionType: INTERACTION_TYPES.DISMISS,
+            metadata: { source: "discover_feed", filter: selectedFilter },
+        }).catch(() => null);
+        scheduleRefresh();
+    }
+
+    function handleLike(place) {
+        const id = place.placeId ?? place.id;
+        const already = likedPlaceIds.has(id);
+        setLikedPlaceIds((prev) => {
+            const next = new Set(prev);
+            if (already) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+        if (!already) {
+            createInteraction({
+                placeId: id,
+                actionType: INTERACTION_TYPES.LIKE,
+                metadata: { source: "discover_feed", filter: selectedFilter },
+            }).catch(() => null);
             scheduleRefresh();
-        } catch (err) {
-            Alert.alert("Unable to dismiss", getApiErrorMessage(err));
         }
     }
 
@@ -858,6 +883,10 @@ export default function DiscoverScreen({ navigation, route }) {
                             <DiscoverCard
                                 place={item}
                                 onPress={() => handleOpenDetail(item)}
+                                onPressIn={() => prefetchDiscoverDetail(item)}
+                                liked={likedPlaceIds.has(item.placeId ?? item.id)}
+                                saved={savedPlaceIds.has(item.placeId ?? item.id)}
+                                onLike={() => handleLike(item)}
                                 onSave={() => handleSave(item)}
                                 onDismiss={() => handleDismiss(item)}
                             />
