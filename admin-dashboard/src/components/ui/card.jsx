@@ -1,13 +1,15 @@
 import { cn } from "@/utils/cn";
 
+/* ── Base card ─────────────────────────────────────────────────────────────── */
 function Card({ className, hover = false, ...props }) {
   return (
     <div
       className={cn(
-        "rounded-2xl border border-slate-200/80 bg-white shadow-sm",
-        hover && "card-hover cursor-pointer",
+        "rounded-xl bg-white border border-border",
+        hover && "transition-shadow duration-200 hover:shadow-card-hover cursor-pointer",
         className
       )}
+      style={{ boxShadow: "0 0 0 1px #e5e4e0" }}
       {...props}
     />
   );
@@ -16,7 +18,10 @@ function Card({ className, hover = false, ...props }) {
 function CardHeader({ className, ...props }) {
   return (
     <div
-      className={cn("flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100", className)}
+      className={cn(
+        "flex items-center justify-between gap-3 px-5 py-4 border-b border-border-subtle",
+        className
+      )}
       {...props}
     />
   );
@@ -25,9 +30,15 @@ function CardHeader({ className, ...props }) {
 function CardTitle({ className, ...props }) {
   return (
     <h4
-      className={cn("text-sm font-semibold text-slate-700 leading-none", className)}
+      className={cn("text-sm font-semibold text-text-primary leading-none", className)}
       {...props}
     />
+  );
+}
+
+function CardDescription({ className, ...props }) {
+  return (
+    <p className={cn("text-xs text-text-tertiary mt-0.5", className)} {...props} />
   );
 }
 
@@ -35,21 +46,48 @@ function CardContent({ className, ...props }) {
   return <div className={cn("px-5 py-4", className)} {...props} />;
 }
 
-/* Gradient stat card */
-function StatCard({ title, value, sub, icon: Icon, gradient = "from-indigo-500 to-violet-500", className }) {
+function CardFooter({ className, ...props }) {
+  return (
+    <div
+      className={cn("flex items-center justify-between px-5 py-3 border-t border-border-subtle", className)}
+      {...props}
+    />
+  );
+}
+
+/* ── Stat card ─────────────────────────────────────────────────────────────── */
+function StatCard({ title, value, sub, icon: Icon, trend, trendLabel, className }) {
+  const isPositive = trend > 0;
+  const isNegative = trend < 0;
+
   return (
     <Card className={cn("overflow-hidden", className)}>
-      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-[0.06] rounded-2xl`} />
-      <CardContent className="relative">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{title}</p>
-            <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900 tabular-nums">{value}</p>
-            {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
+      <CardContent className="py-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="label-xs mb-2.5">{title}</p>
+            <p className="text-2xl font-semibold tracking-tight text-text-primary tabular-nums" style={{ letterSpacing: "-0.02em" }}>
+              {value}
+            </p>
+            {sub && (
+              <p className="mt-1.5 text-xs text-text-tertiary">{sub}</p>
+            )}
+            {trend != null && (
+              <div className={cn(
+                "mt-2 inline-flex items-center gap-1 text-xs font-medium",
+                isPositive && "text-positive",
+                isNegative && "text-negative",
+                !isPositive && !isNegative && "text-text-tertiary"
+              )}>
+                <span>{isPositive ? "↑" : isNegative ? "↓" : "→"}</span>
+                <span>{Math.abs(trend)}%</span>
+                {trendLabel && <span className="font-normal text-text-tertiary">{trendLabel}</span>}
+              </div>
+            )}
           </div>
           {Icon && (
-            <div className={`rounded-xl bg-gradient-to-br ${gradient} p-2.5 shadow-sm`}>
-              <Icon className="h-5 w-5 text-white" />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-overlay border border-border-subtle">
+              <Icon className="h-4 w-4 text-text-secondary" />
             </div>
           )}
         </div>
@@ -58,4 +96,4 @@ function StatCard({ title, value, sub, icon: Icon, gradient = "from-indigo-500 t
   );
 }
 
-export { Card, CardHeader, CardTitle, CardContent, StatCard };
+export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, StatCard };

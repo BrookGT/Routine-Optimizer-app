@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Search, X, ChevronRight, RefreshCw, Users, UserX } from "lucide-react";
 import {
   deleteAdminUser,
   getAdminUser,
@@ -10,14 +11,33 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
-import { LoadingState } from "@/components/ui/loading";
+import { LoadingState, SkeletonRow } from "@/components/ui/loading";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/utils/cn";
 
-function formatDate(value) {
-  if (!value) return "--";
+function fmt(value) {
+  if (!value) return "—";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function Section({ title, children }) {
+  return (
+    <div className="space-y-2.5">
+      <p className="label-xs">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function DetailRow({ label, value }) {
+  return (
+    <div className="flex justify-between gap-4 py-1.5 border-b border-border-subtle last:border-0">
+      <span className="text-xs text-text-tertiary">{label}</span>
+      <span className="text-xs font-medium text-text-primary text-right max-w-[60%] break-all">{value || "—"}</span>
+    </div>
+  );
 }
 
 function UserDetailPanel({ uid, onClose }) {
@@ -26,95 +46,154 @@ function UserDetailPanel({ uid, onClose }) {
     queryFn: () => getAdminUser(uid),
     enabled: Boolean(uid),
   });
-
   const user = userQuery.data?.data;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-end bg-slate-950/50">
-      <div className="h-full w-full max-w-md overflow-y-auto bg-white p-6 shadow-2xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-800">User Details</h2>
-          <Button variant="ghost" onClick={onClose}>✕</Button>
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40 bg-black/30"
+        onClick={onClose}
+      />
+      {/* Panel */}
+      <div
+        className="fixed right-0 top-0 z-50 h-full w-full max-w-[420px] overflow-y-auto"
+        style={{ background: "var(--color-surface)", borderLeft: "1px solid var(--color-border)" }}
+      >
+        {/* Panel header */}
+        <div
+          className="sticky top-0 z-10 flex items-center justify-between px-5 py-4"
+          style={{ background: "var(--color-surface)", borderBottom: "1px solid var(--color-border-subtle)" }}
+        >
+          <h2 className="text-sm font-semibold text-text-primary">User Details</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary hover:bg-surface-overlay hover:text-text-secondary transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
-        {userQuery.isLoading && <LoadingState label="Loading user..." />}
-        {userQuery.isError && (
-          <Alert variant="error">{userQuery.error?.message}</Alert>
-        )}
+        <div className="px-5 py-5 space-y-6">
+          {userQuery.isLoading && <LoadingState label="Loading user…" />}
+          {userQuery.isError && <Alert variant="error">{userQuery.error?.message}</Alert>}
 
-        {user && (
-          <div className="space-y-4 text-sm text-slate-700">
-            <section className="rounded-xl border border-slate-100 p-4 space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Identity</h3>
-              <p><span className="text-slate-400">UID:</span> <span className="font-mono text-xs">{user.uid}</span></p>
-              <p><span className="text-slate-400">Email:</span> {user.email ?? "--"}</p>
-              <p><span className="text-slate-400">Name:</span> {user.name ?? "--"}</p>
-              <p><span className="text-slate-400">Joined:</span> {formatDate(user.createdAt)}</p>
-              {user.suspended && <Badge variant="danger">Suspended</Badge>}
-            </section>
+          {user && (
+            <>
+              {/* Identity */}
+              <Section title="Identity">
+                <DetailRow label="UID"    value={user.uid} />
+                <DetailRow label="Email"  value={user.email} />
+                <DetailRow label="Name"   value={user.name} />
+                <DetailRow label="Joined" value={fmt(user.createdAt)} />
+                {user.suspended && (
+                  <div className="mt-1">
+                    <Badge variant="danger" dot>Suspended</Badge>
+                  </div>
+                )}
+              </Section>
 
-            <section className="rounded-xl border border-slate-100 p-4 space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Onboarding Preferences</h3>
-              <p><span className="text-slate-400">Budget:</span> {user.budgetRange ?? "--"}</p>
-              <p><span className="text-slate-400">Location:</span> {user.locationPreference ?? "--"}</p>
-              <p><span className="text-slate-400">Religion:</span> {user.religion ?? "--"}</p>
-              <p><span className="text-slate-400">Weekend:</span> {user.weekendPreference ?? "--"}</p>
-              <p><span className="text-slate-400">Weekly Budget:</span> {user.weeklyBudget ?? "--"}</p>
-            </section>
+              {/* Preferences */}
+              <Section title="Onboarding Preferences">
+                <DetailRow label="Budget"          value={user.budgetRange} />
+                <DetailRow label="Location"        value={user.locationPreference} />
+                <DetailRow label="Religion"        value={user.religion} />
+                <DetailRow label="Weekend pref."   value={user.weekendPreference} />
+                <DetailRow label="Weekly budget"   value={user.weeklyBudget} />
+              </Section>
 
-            {Array.isArray(user.interests) && user.interests.length > 0 && (
-              <section className="rounded-xl border border-slate-100 p-4 space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Interests</h3>
-                <div className="flex flex-wrap gap-2">
-                  {user.interests.map((i) => <Badge key={i} variant="default">{i}</Badge>)}
-                </div>
-              </section>
-            )}
-
-            {user.typeAffinity && Object.keys(user.typeAffinity).length > 0 && (
-              <section className="rounded-xl border border-slate-100 p-4 space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Type Affinity</h3>
-                <div className="space-y-1">
-                  {Object.entries(user.typeAffinity)
-                    .sort(([, a], [, b]) => b - a)
-                    .slice(0, 8)
-                    .map(([type, score]) => (
-                      <div key={type} className="flex justify-between">
-                        <span className="capitalize">{type}</span>
-                        <span className="font-semibold text-slate-900">{Number(score).toFixed(1)}</span>
-                      </div>
+              {/* Interests */}
+              {Array.isArray(user.interests) && user.interests.length > 0 && (
+                <Section title="Interests">
+                  <div className="flex flex-wrap gap-1.5">
+                    {user.interests.map((i) => (
+                      <Badge key={i} variant="default">{i}</Badge>
                     ))}
-                </div>
-              </section>
-            )}
+                  </div>
+                </Section>
+              )}
 
-            {Array.isArray(user.seenPlaces) && user.seenPlaces.length > 0 && (
-              <section className="rounded-xl border border-slate-100 p-4 space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                  Seen Places ({user.seenPlaces.length})
-                </h3>
-                <div className="flex flex-wrap gap-1">
-                  {user.seenPlaces.slice(0, 15).map((id) => (
-                    <span key={id} className="rounded bg-slate-100 px-2 py-0.5 text-xs font-mono text-slate-600">{id}</span>
-                  ))}
-                  {user.seenPlaces.length > 15 && (
-                    <span className="text-xs text-slate-400">+{user.seenPlaces.length - 15} more</span>
-                  )}
-                </div>
-              </section>
-            )}
-          </div>
-        )}
+              {/* Type affinity */}
+              {user.typeAffinity && Object.keys(user.typeAffinity).length > 0 && (
+                <Section title="Type Affinity">
+                  <div className="space-y-2">
+                    {Object.entries(user.typeAffinity)
+                      .sort(([, a], [, b]) => b - a)
+                      .slice(0, 8)
+                      .map(([type, score]) => {
+                        const max = Math.max(...Object.values(user.typeAffinity));
+                        return (
+                          <div key={type} className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="capitalize text-text-secondary">{type}</span>
+                              <span className="font-medium text-text-primary tabular-nums">{Number(score).toFixed(1)}</span>
+                            </div>
+                            <Progress value={(score / max) * 100} />
+                          </div>
+                        );
+                      })}
+                  </div>
+                </Section>
+              )}
+
+              {/* Seen places */}
+              {Array.isArray(user.seenPlaces) && user.seenPlaces.length > 0 && (
+                <Section title={`Seen Places (${user.seenPlaces.length})`}>
+                  <div className="flex flex-wrap gap-1">
+                    {user.seenPlaces.slice(0, 12).map((id) => (
+                      <span
+                        key={id}
+                        className="rounded bg-surface-inset px-2 py-0.5 font-mono text-[10px] text-text-secondary"
+                      >
+                        {id}
+                      </span>
+                    ))}
+                    {user.seenPlaces.length > 12 && (
+                      <span className="text-xs text-text-tertiary">+{user.seenPlaces.length - 12} more</span>
+                    )}
+                  </div>
+                </Section>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ConfirmModal({ user, onConfirm, onCancel, isPending }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div
+        className="w-full max-w-sm rounded-xl p-6 space-y-4 animate-fade-in"
+        style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", boxShadow: "var(--shadow-overlay)" }}
+      >
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold text-text-primary">Delete account?</h3>
+          <p className="text-sm text-text-secondary">
+            This permanently deletes{" "}
+            <span className="font-medium text-text-primary">{user.email ?? user.uid}</span>{" "}
+            from Firestore. This action cannot be undone.
+          </p>
+        </div>
+        <div className="flex gap-2.5 pt-1">
+          <Button variant="secondary" className="flex-1" onClick={onCancel}>Cancel</Button>
+          <Button variant="danger" className="flex-1" onClick={onConfirm} disabled={isPending}>
+            {isPending ? "Deleting…" : "Delete account"}
+          </Button>
+        </div>
       </div>
     </div>
   );
 }
 
 export default function UsersPage() {
-  const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
-  const [selectedUid, setSelectedUid] = useState(null);
-  const [cursor, setCursor] = useState(null);
+  const queryClient  = useQueryClient();
+  const [search,     setSearch]     = useState("");
+  const [selectedUid,setSelectedUid]= useState(null);
+  const [cursor,     setCursor]     = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
 
   const usersQuery = useQuery({
@@ -136,8 +215,8 @@ export default function UsersPage() {
     },
   });
 
-  const users = usersQuery.data?.users ?? [];
-  const total = usersQuery.data?.total ?? 0;
+  const users   = usersQuery.data?.users ?? [];
+  const total   = usersQuery.data?.total ?? 0;
   const hasMore = usersQuery.data?.hasMore ?? false;
 
   const filtered = search.trim()
@@ -150,106 +229,129 @@ export default function UsersPage() {
     : users;
 
   return (
-    <section className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="page-header">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">User Management</h2>
-          <p className="text-sm text-slate-500">
-            {total > 0 ? `${total.toLocaleString()} total users` : "Manage all platform users"}
+          <h2 className="page-title">Users</h2>
+          <p className="page-sub">
+            {total > 0 ? `${total.toLocaleString()} total users` : "Manage platform user accounts"}
           </p>
         </div>
-        <Button variant="secondary" onClick={() => queryClient.invalidateQueries(["admin-users"])}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => queryClient.invalidateQueries(["admin-users"])}
+          disabled={usersQuery.isFetching}
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${usersQuery.isFetching ? "animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
 
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-tertiary" />
+        <input
+          className="input-base pl-9"
+          placeholder="Search by email, name, or UID…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-secondary transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Errors */}
+      {usersQuery.isError && <Alert variant="error">{usersQuery.error?.message}</Alert>}
+      {suspendMutation.isError && <Alert variant="error">{suspendMutation.error?.message}</Alert>}
+
+      {/* Table */}
       <Card>
-        <CardContent className="pt-4">
-          <input
-            className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-400"
-            placeholder="Search by email, UID, or name..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </CardContent>
-      </Card>
-
-      {usersQuery.isLoading && <LoadingState label="Loading users..." />}
-      {usersQuery.isError && (
-        <Alert variant="error">{usersQuery.error?.message}</Alert>
-      )}
-
-      {suspendMutation.isError && (
-        <Alert variant="error">{suspendMutation.error?.message}</Alert>
-      )}
-
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-slate-100 bg-slate-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Email</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Budget</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Joined</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {filtered.length === 0 && !usersQuery.isLoading && (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
+                {["Email / UID", "Name", "Budget", "Joined", "Status", ""].map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left"
+                    style={{ background: "var(--color-surface-overlay)" }}
+                  >
+                    <span className="label-xs">{h}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {usersQuery.isLoading
+                ? Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={6} />)
+                : filtered.length === 0
+                ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
-                      No users found.
+                    <td colSpan={6} className="px-4 py-12 text-center">
+                      <div className="flex flex-col items-center gap-2 text-text-tertiary">
+                        <Users className="h-8 w-8 opacity-40" />
+                        <p className="text-sm">{search ? "No users match your search" : "No users found"}</p>
+                      </div>
                     </td>
                   </tr>
-                )}
-                {filtered.map((user) => (
-                  <tr key={user.uid} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 font-medium text-slate-900">
+                )
+                : filtered.map((user) => (
+                  <tr
+                    key={user.uid}
+                    className="table-row-hover"
+                    style={{ borderBottom: "1px solid var(--color-border-subtle)" }}
+                  >
+                    <td className="px-4 py-3">
                       <button
-                        className="text-sky-600 hover:underline text-left"
+                        className="text-left hover:underline text-xs font-medium text-text-primary"
                         onClick={() => setSelectedUid(user.uid)}
                       >
-                        {user.email ?? "--"}
+                        {user.email ?? user.uid}
                       </button>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{user.name ?? "--"}</td>
-                    <td className="px-4 py-3 text-slate-600 capitalize">{user.budgetRange ?? "--"}</td>
-                    <td className="px-4 py-3 text-slate-500">{formatDate(user.createdAt)}</td>
-                    <td className="px-4 py-3">
-                      {user.suspended ? (
-                        <Badge variant="danger">Suspended</Badge>
-                      ) : (
-                        <Badge variant="success">Active</Badge>
+                      {user.email && (
+                        <p className="text-[10px] text-text-tertiary font-mono mt-0.5 truncate max-w-[200px]">{user.uid}</p>
                       )}
                     </td>
+                    <td className="px-4 py-3 text-xs text-text-secondary">{user.name ?? "—"}</td>
+                    <td className="px-4 py-3 text-xs text-text-secondary capitalize">{user.budgetRange ?? "—"}</td>
+                    <td className="px-4 py-3 text-xs text-text-tertiary">{fmt(user.createdAt)}</td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                      <Badge variant={user.suspended ? "danger" : "success"} dot>
+                        {user.suspended ? "Suspended" : "Active"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 justify-end">
                         <Button
                           variant="ghost"
-                          className="h-7 px-2 text-xs"
+                          size="icon-sm"
+                          title="View details"
                           onClick={() => setSelectedUid(user.uid)}
                         >
-                          View
+                          <ChevronRight className="h-3.5 w-3.5" />
                         </Button>
                         <Button
                           variant="ghost"
-                          className={cn(
-                            "h-7 px-2 text-xs",
-                            user.suspended ? "text-emerald-600" : "text-amber-600"
-                          )}
-                          onClick={() =>
-                            suspendMutation.mutate({ uid: user.uid, suspended: !user.suspended })
-                          }
+                          size="xs"
+                          className={user.suspended ? "text-positive hover:bg-[#f0fdf4]" : "text-warn hover:bg-[#fffbeb]"}
+                          onClick={() => suspendMutation.mutate({ uid: user.uid, suspended: !user.suspended })}
                           disabled={suspendMutation.isPending}
                         >
                           {user.suspended ? "Unsuspend" : "Suspend"}
                         </Button>
                         <Button
                           variant="ghost"
-                          className="h-7 px-2 text-xs text-rose-600 hover:bg-rose-50"
+                          size="xs"
+                          className="text-negative hover:bg-[#fef2f2]"
                           onClick={() => setConfirmDelete(user)}
                         >
                           Delete
@@ -257,24 +359,29 @@ export default function UsersPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        {hasMore && (
+          <div
+            className="flex justify-center px-4 py-3"
+            style={{ borderTop: "1px solid var(--color-border-subtle)" }}
+          >
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const last = users[users.length - 1];
+                if (last) setCursor(last.uid);
+              }}
+            >
+              Load more users
+            </Button>
           </div>
-          {hasMore && (
-            <div className="flex justify-center border-t border-slate-100 p-4">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  const last = users[users.length - 1];
-                  if (last) setCursor(last.uid);
-                }}
-              >
-                Load More
-              </Button>
-            </div>
-          )}
-        </CardContent>
+        )}
       </Card>
 
       {selectedUid && (
@@ -282,32 +389,13 @@ export default function UsersPage() {
       )}
 
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-slate-800">Delete User?</h3>
-            <p className="mt-2 text-sm text-slate-600">
-              This will permanently delete <strong>{confirmDelete.email ?? confirmDelete.uid}</strong> from
-              Firestore. This cannot be undone.
-            </p>
-            <div className="mt-4 flex gap-3">
-              <Button
-                variant="secondary"
-                className="flex-1"
-                onClick={() => setConfirmDelete(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                className="flex-1 bg-rose-600 hover:bg-rose-700"
-                onClick={() => deleteMutation.mutate(confirmDelete.uid)}
-                disabled={deleteMutation.isPending}
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          user={confirmDelete}
+          onConfirm={() => deleteMutation.mutate(confirmDelete.uid)}
+          onCancel={() => setConfirmDelete(null)}
+          isPending={deleteMutation.isPending}
+        />
       )}
-    </section>
+    </div>
   );
 }

@@ -1,33 +1,53 @@
 import { cn } from "@/utils/cn";
 
-const variants = {
-  success: "bg-emerald-50 text-emerald-700 border border-emerald-200",
-  warning: "bg-amber-50 text-amber-700 border border-amber-200",
-  danger:  "bg-rose-50 text-rose-700 border border-rose-200",
-  default: "bg-indigo-50 text-indigo-700 border border-indigo-200",
-};
-
-const dots = {
-  success: "bg-emerald-500",
-  warning: "bg-amber-500",
-  danger:  "bg-rose-500",
-  default: "bg-indigo-500",
+const styles = {
+  success: {
+    wrap: "bg-[#f0fdf4] border border-[#bbf7d0] text-[#166534]",
+    dot:  "bg-positive",
+    text: "text-[#166534]",
+  },
+  warning: {
+    wrap: "bg-[#fffbeb] border border-[#fde68a] text-[#92400e]",
+    dot:  "bg-warn",
+    text: "text-[#92400e]",
+  },
+  danger: {
+    wrap: "bg-[#fef2f2] border border-[#fecaca] text-[#991b1b]",
+    dot:  "bg-negative",
+    text: "text-[#991b1b]",
+  },
+  default: {
+    wrap: "bg-surface-overlay border border-border text-text-secondary",
+    dot:  "bg-text-tertiary",
+    text: "text-text-secondary",
+  },
+  neutral: {
+    wrap: "bg-surface-overlay border border-border text-text-secondary",
+    dot:  "bg-text-tertiary",
+    text: "text-text-secondary",
+  },
+  bronze: {
+    wrap: "bg-[#fffbeb] border border-[#fde68a] text-[#92400e]",
+    dot:  "bg-bronze-light",
+    text: "text-[#92400e]",
+  },
 };
 
 export function Badge({ variant = "default", dot = false, className, children, ...props }) {
+  const s = styles[variant] ?? styles.default;
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold",
-        variants[variant] ?? variants.default,
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium",
+        s.wrap,
         className
       )}
       {...props}
     >
-      {dot && (
-        <span className={cn("h-1.5 w-1.5 rounded-full", dots[variant] ?? dots.default)} />
-      )}
+      {dot && <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", s.dot)} />}
       {children}
     </span>
   );
 }
+
+export default Badge;

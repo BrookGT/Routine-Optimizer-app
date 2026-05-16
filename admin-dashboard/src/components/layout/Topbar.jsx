@@ -1,4 +1,4 @@
-import { Bell, LogOut, Menu, Search } from "lucide-react";
+import { LogOut, Menu } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/utils/cn";
@@ -20,68 +20,101 @@ const PAGE_TITLES = {
   "/dev-tools":      "Dev Tools",
 };
 
+const PAGE_SUBS = {
+  "/dashboard":      "Real-time API status and performance",
+  "/analytics":      "Platform usage and user insights",
+  "/users":          "Manage and review user accounts",
+  "/interactions":   "User-AI interaction logs",
+  "/recommendations":"Recommendation engine data",
+  "/ai-model":       "AI model status and controls",
+  "/experiments":    "A/B tests and feature flags",
+  "/places":         "Places catalogue management",
+  "/events":         "Scraped and approved events",
+  "/routines":       "User routine data",
+  "/moderation":     "Content review queue",
+  "/notifications":  "System-wide notifications",
+  "/system":         "Platform configuration",
+  "/dev-tools":      "Developer utilities",
+};
+
 export default function Topbar({ onOpenSidebar }) {
   const { isAuthenticated, clearToken, email: adminEmail } = useAuth();
   const location = useLocation();
   const title = PAGE_TITLES[location.pathname] ?? "Dashboard";
-  const initials = adminEmail
-    ? adminEmail.slice(0, 2).toUpperCase()
-    : "AD";
+  const sub   = PAGE_SUBS[location.pathname];
+  const initials = adminEmail ? adminEmail.slice(0, 2).toUpperCase() : "AD";
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-4 border-b border-slate-200/80 bg-white/90 px-6 backdrop-blur-md">
+    <header
+      className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-4 px-5"
+      style={{
+        background: "rgba(250, 250, 248, 0.92)",
+        borderBottom: "1px solid var(--color-border-subtle)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+      }}
+    >
       {/* Mobile menu button */}
       <button
         type="button"
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition md:hidden"
+        className={cn(
+          "flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary",
+          "hover:bg-surface-overlay hover:text-text-secondary transition-colors md:hidden"
+        )}
         onClick={onOpenSidebar}
         aria-label="Open sidebar"
       >
-        <Menu className="h-5 w-5" />
+        <Menu className="h-4 w-4" />
       </button>
 
       {/* Page title */}
-      <div className="flex-1">
-        <h1 className="text-base font-semibold text-slate-900">{title}</h1>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-sm font-semibold text-text-primary leading-none">{title}</h1>
+          {sub && (
+            <>
+              <span className="text-border-strong text-sm">/</span>
+              <span className="text-xs text-text-tertiary truncate hidden sm:block">{sub}</span>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Right cluster */}
       <div className="flex items-center gap-2">
-        {/* Bell */}
-        <button
-          type="button"
-          className="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition"
-          aria-label="Notifications"
-        >
-          <Bell className="h-4 w-4" />
-          <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-indigo-500" />
-        </button>
-
-        {/* Divider */}
-        <div className="h-6 w-px bg-slate-200 mx-1" />
-
-        {/* Avatar + Sign out */}
         {isAuthenticated && (
-          <div className="flex items-center gap-3">
+          <>
             {/* Avatar */}
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-xs font-bold text-white shadow-sm shadow-indigo-200 select-none">
+            <div
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white select-none"
+              style={{ background: "#292524" }}
+              title={adminEmail}
+            >
               {initials}
             </div>
+
             {adminEmail && (
-              <span className="hidden text-xs font-medium text-slate-600 lg:block max-w-[160px] truncate">
+              <span className="hidden text-xs text-text-tertiary lg:block max-w-[160px] truncate">
                 {adminEmail}
               </span>
             )}
+
+            <div className="h-4 w-px bg-border mx-1" />
+
             <button
               type="button"
               onClick={clearToken}
-              className="flex items-center gap-1.5 rounded-lg px-3 h-8 text-xs font-semibold text-slate-600 hover:bg-red-50 hover:text-rose-600 border border-slate-200 hover:border-rose-200 transition"
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2.5 h-7 text-xs font-medium",
+                "text-text-secondary border border-border",
+                "hover:bg-[#fef2f2] hover:text-negative hover:border-[#fecaca] transition-colors"
+              )}
               aria-label="Sign out"
             >
               <LogOut className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Sign Out</span>
+              <span className="hidden sm:inline">Sign out</span>
             </button>
-          </div>
+          </>
         )}
       </div>
     </header>

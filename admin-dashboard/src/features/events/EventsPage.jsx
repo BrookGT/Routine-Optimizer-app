@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw, Search, Star, X } from "lucide-react";
 import {
   deleteAdminEvent,
   getAdminEvents,
@@ -7,45 +8,33 @@ import {
   setEventFeatured,
   updateAdminEvent,
 } from "@/services/endpoints";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
+import { LoadingState, SkeletonRow, SkeletonCard } from "@/components/ui/loading";
+import { cn } from "@/utils/cn";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDate(iso) {
+function fmtDate(iso) {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return iso;
-  }
+    return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  } catch { return iso; }
 }
 
-const CATEGORY_COLORS = {
-  music:     "bg-purple-100 text-purple-700",
-  tech:      "bg-blue-100 text-blue-700",
-  church:    "bg-orange-100 text-orange-700",
-  fitness:   "bg-green-100 text-green-700",
-  business:  "bg-yellow-100 text-yellow-700",
-  food:      "bg-red-100 text-red-700",
-  art:       "bg-pink-100 text-pink-700",
-  sports:    "bg-cyan-100 text-cyan-700",
-  education: "bg-indigo-100 text-indigo-700",
-  social:    "bg-teal-100 text-teal-700",
-  other:     "bg-slate-100 text-slate-600",
-};
+const CATEGORIES = [
+  "music", "tech", "church", "fitness", "business",
+  "food", "art", "sports", "education", "social", "other",
+];
 
 const SOURCE_LABELS = {
-  alladdisevents:           "AllAddis Events",
-  whatsupaddis:             "WhatsUp Addis",
+  alladdisevents:           "AllAddis",
+  whatsupaddis:             "WhatsUp",
   telegram_events_ethiopia: "Telegram",
 };
 
-// ─── Edit Modal ───────────────────────────────────────────────────────────────
-
-function EditModal({ event, onClose, onSave }) {
+/* ── Edit Modal ─────────────────────────────────────────────────────────── */
+function EditModal({ event, onClose, onSave, isPending }) {
   const [form, setForm] = useState({
     title:       event.title || "",
     description: event.description || "",
@@ -55,371 +44,302 @@ function EditModal({ event, onClose, onSave }) {
     image:       event.image || "",
     source_url:  event.source_url || "",
   });
-
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-        <h2 className="mb-4 text-lg font-bold text-slate-800">Edit Event</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div
+        className="w-full max-w-lg rounded-xl p-6 space-y-4 animate-fade-in max-h-[90vh] overflow-y-auto"
+        style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", boxShadow: "0 16px 48px rgba(0,0,0,0.12)" }}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-text-primary">Edit Event</h2>
+          <button type="button" onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary hover:bg-surface-overlay transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
 
         <div className="space-y-3">
           {[
-            { label: "Title",       key: "title" },
-            { label: "Location",    key: "location" },
-            { label: "Image URL",   key: "image" },
-            { label: "Source URL",  key: "source_url" },
+            { label: "Title",      key: "title" },
+            { label: "Location",   key: "location" },
+            { label: "Image URL",  key: "image" },
+            { label: "Source URL", key: "source_url" },
           ].map(({ label, key }) => (
-            <div key={key}>
-              <label className="mb-1 block text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                {label}
-              </label>
-              <input
-                type="text"
-                value={form[key]}
-                onChange={set(key)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
-              />
+            <div key={key} className="space-y-1">
+              <label className="label-xs">{label}</label>
+              <input type="text" value={form[key]} onChange={set(key)} className="input-base" />
             </div>
           ))}
 
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-500 uppercase tracking-wide">
-              Date
-            </label>
-            <input
-              type="date"
-              value={form.date}
-              onChange={set("date")}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
-            />
+          <div className="space-y-1">
+            <label className="label-xs">Date</label>
+            <input type="date" value={form.date} onChange={set("date")} className="input-base" />
           </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-500 uppercase tracking-wide">
-              Category
-            </label>
-            <select
-              value={form.category}
-              onChange={set("category")}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
-            >
-              {Object.keys(CATEGORY_COLORS).map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
+          <div className="space-y-1">
+            <label className="label-xs">Category</label>
+            <select value={form.category} onChange={set("category")} className="input-base">
+              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-500 uppercase tracking-wide">
-              Description
-            </label>
+          <div className="space-y-1">
+            <label className="label-xs">Description</label>
             <textarea
               rows={3}
               value={form.description}
               onChange={set("description")}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
+              className="input-base"
+              style={{ height: "auto", resize: "vertical" }}
             />
           </div>
         </div>
 
-        <div className="mt-5 flex gap-3 justify-end">
-          <button
-            onClick={onClose}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onSave(event.id, form)}
-            className="rounded-lg bg-sky-600 px-5 py-2 text-sm font-bold text-white hover:bg-sky-700"
-          >
-            Save
-          </button>
+        <div className="flex gap-2.5 pt-1">
+          <Button variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+          <Button variant="default" className="flex-1" onClick={() => onSave(event.id, form)} disabled={isPending}>
+            {isPending ? "Saving…" : "Save changes"}
+          </Button>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── Event Row ────────────────────────────────────────────────────────────────
-
-function EventRow({ event, onEdit, onDelete, onToggleFeatured }) {
-  const catClass = CATEGORY_COLORS[event.category] || CATEGORY_COLORS.other;
-
-  return (
-    <tr className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-3">
-          {event.image ? (
-            <img
-              src={event.image}
-              alt=""
-              className="h-10 w-14 rounded-lg object-cover flex-shrink-0 bg-slate-100"
-              onError={(e) => { e.target.style.display = "none"; }}
-            />
-          ) : (
-            <div className="h-10 w-14 rounded-lg bg-slate-100 flex-shrink-0 flex items-center justify-center text-slate-400 text-xs">
-              No img
-            </div>
-          )}
-          <div className="min-w-0">
-            <p className="font-semibold text-slate-800 text-sm leading-tight truncate max-w-xs">
-              {event.title}
-            </p>
-            <p className="text-xs text-slate-400 mt-0.5 truncate max-w-xs">
-              {event.source_url ? (
-                <a
-                  href={event.source_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:underline hover:text-sky-600"
-                >
-                  View source ↗
-                </a>
-              ) : "No source URL"}
-            </p>
-          </div>
-        </div>
-      </td>
-
-      <td className="px-4 py-3">
-        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${catClass}`}>
-          {event.category || "other"}
-        </span>
-      </td>
-
-      <td className="px-4 py-3 text-sm text-slate-600">{formatDate(event.date)}</td>
-
-      <td className="px-4 py-3 text-sm text-slate-600 max-w-[160px] truncate">
-        {event.location || "—"}
-      </td>
-
-      <td className="px-4 py-3">
-        <span className="text-xs text-slate-500 bg-slate-100 rounded px-2 py-0.5">
-          {SOURCE_LABELS[event.source] || event.source || "—"}
-        </span>
-      </td>
-
-      <td className="px-4 py-3 text-center">
-        <button
-          onClick={() => onToggleFeatured(event.id, !event.featured)}
-          title={event.featured ? "Unfeature" : "Feature"}
-          className={`text-lg ${event.featured ? "text-amber-400" : "text-slate-300 hover:text-amber-300"}`}
-        >
-          ★
-        </button>
-      </td>
-
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => onEdit(event)}
-            className="rounded-md bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100 transition-colors"
-          >
-            Edit
-          </button>
-          <button
-            onClick={() => onDelete(event.id, event.title)}
-            className="rounded-md bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-100 transition-colors"
-          >
-            Delete
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
+/* ── Main Page ───────────────────────────────────────────────────────────── */
 export default function EventsPage() {
   const qc = useQueryClient();
-  const [editingEvent, setEditingEvent] = useState(null);
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [page, setPage] = useState(1);
+  const [editingEvent,    setEditingEvent]    = useState(null);
+  const [categoryFilter,  setCategoryFilter]  = useState("all");
+  const [search,          setSearch]          = useState("");
+  const [page,            setPage]            = useState(1);
   const PAGE_SIZE = 20;
 
-  // Queries
-  const statsQuery = useQuery({
-    queryKey: ["events-stats"],
-    queryFn: getEventsStats,
-  });
-
+  const statsQuery = useQuery({ queryKey: ["events-stats"], queryFn: getEventsStats });
   const eventsQuery = useQuery({
     queryKey: ["admin-events", categoryFilter],
-    queryFn: () =>
-      getAdminEvents({
-        category: categoryFilter === "all" ? undefined : categoryFilter,
-        limit: 200,
-      }),
+    queryFn: () => getAdminEvents({ category: categoryFilter === "all" ? undefined : categoryFilter, limit: 200 }),
   });
 
-  const events = eventsQuery.data?.events ?? [];
-  const total = statsQuery.data?.total ?? events.length;
-
-  // Pagination (client-side on filtered list)
-  const pageStart = (page - 1) * PAGE_SIZE;
-  const pageEnd = pageStart + PAGE_SIZE;
-  const pagedEvents = events.slice(pageStart, pageEnd);
-  const totalPages = Math.max(1, Math.ceil(events.length / PAGE_SIZE));
-
-  // Mutations
   const updateMutation = useMutation({
     mutationFn: ({ id, updates }) => updateAdminEvent(id, updates),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin-events"] });
-      setEditingEvent(null);
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-events"] }); setEditingEvent(null); },
   });
-
   const deleteMutation = useMutation({
     mutationFn: (id) => deleteAdminEvent(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-events"] }),
   });
-
   const featuredMutation = useMutation({
     mutationFn: ({ id, featured }) => setEventFeatured(id, featured),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-events"] }),
   });
 
-  // Handlers
+  const allEvents = eventsQuery.data?.events ?? [];
+  const total     = statsQuery.data?.total ?? allEvents.length;
+
+  const filtered = allEvents.filter((e) =>
+    !search || e.title?.toLowerCase().includes(search.toLowerCase()) || e.location?.toLowerCase().includes(search.toLowerCase())
+  );
+  const totalPages  = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageStart   = (page - 1) * PAGE_SIZE;
+  const pagedEvents = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+
   const handleDelete = (id, title) => {
     if (!window.confirm(`Delete "${title}"?`)) return;
     deleteMutation.mutate(id);
   };
 
-  const handleSave = (id, updates) => updateMutation.mutate({ id, updates });
-
-  const handleToggleFeatured = (id, featured) => featuredMutation.mutate({ id, featured });
-
   return (
-    <div className="space-y-6">
-      {/* Page header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Events</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Scraped Ethiopian events — {total.toLocaleString()} total
+          <h2 className="page-title">Events</h2>
+          <p className="page-sub">
+            {total.toLocaleString()} scraped events · {allEvents.filter((e) => e.featured).length} featured
           </p>
         </div>
+        <Button
+          variant="secondary" size="sm"
+          onClick={() => qc.invalidateQueries({ queryKey: ["admin-events"] })}
+          disabled={eventsQuery.isFetching}
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${eventsQuery.isFetching ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
+      </div>
 
-        {/* Stats cards */}
-        <div className="flex gap-3">
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-center shadow-sm">
-            <p className="text-2xl font-bold text-sky-600">
-              {statsQuery.isLoading ? "…" : total.toLocaleString()}
-            </p>
-            <p className="text-xs text-slate-500">Total Events</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-center shadow-sm">
-            <p className="text-2xl font-bold text-amber-500">
-              {events.filter((e) => e.featured).length}
-            </p>
-            <p className="text-xs text-slate-500">Featured</p>
-          </div>
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Search */}
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-tertiary" />
+          <input
+            className="input-base pl-9 w-60"
+            placeholder="Search events…"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          />
+        </div>
+        {/* Category pills */}
+        <div className="flex flex-wrap gap-1.5">
+          {["all", ...CATEGORIES].map((cat) => (
+            <button
+              key={cat}
+              onClick={() => { setCategoryFilter(cat); setPage(1); }}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium transition-colors border",
+                categoryFilter === cat
+                  ? "bg-text-primary text-white border-text-primary"
+                  : "bg-white text-text-secondary border-border hover:border-border-strong hover:text-text-primary"
+              )}
+            >
+              {cat === "all" ? "All" : cat}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Category filter */}
-      <div className="flex flex-wrap gap-2">
-        {["all", ...Object.keys(CATEGORY_COLORS)].map((cat) => (
-          <button
-            key={cat}
-            onClick={() => { setCategoryFilter(cat); setPage(1); }}
-            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-colors border ${
-              categoryFilter === cat
-                ? "bg-sky-600 text-white border-sky-600"
-                : "bg-white text-slate-600 border-slate-200 hover:border-sky-300 hover:text-sky-700"
-            }`}
-          >
-            {cat === "all" ? "All categories" : cat}
-          </button>
-        ))}
-      </div>
+      {eventsQuery.isError && <Alert variant="error">{eventsQuery.error?.message}</Alert>}
 
       {/* Table */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        {eventsQuery.isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-200 border-t-sky-600" />
-            <span className="ml-3 text-slate-500">Loading events…</span>
-          </div>
-        ) : eventsQuery.isError ? (
-          <div className="py-16 text-center text-red-500">
-            {eventsQuery.error?.message || "Failed to load events"}
-          </div>
-        ) : pagedEvents.length === 0 ? (
-          <div className="py-20 text-center text-slate-400">
-            <p className="text-4xl mb-2">📅</p>
-            <p className="font-semibold">No events yet</p>
-            <p className="text-sm mt-1">Events appear here after the scraping cycle runs</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50">
-                  {["Event", "Category", "Date", "Location", "Source", "Featured", "Actions"].map((h) => (
-                    <th
-                      key={h}
-                      className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {pagedEvents.map((event) => (
-                  <EventRow
-                    key={event.id}
-                    event={event}
-                    onEdit={setEditingEvent}
-                    onDelete={handleDelete}
-                    onToggleFeatured={handleToggleFeatured}
-                  />
+      <Card>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
+                {["Event", "Category", "Date", "Location", "Source", "★", ""].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left" style={{ background: "var(--color-surface-overlay)" }}>
+                    <span className="label-xs">{h}</span>
+                  </th>
                 ))}
-              </tbody>
-            </table>
+              </tr>
+            </thead>
+            <tbody>
+              {eventsQuery.isLoading
+                ? Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={7} />)
+                : pagedEvents.length === 0
+                ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-16 text-center">
+                      <div className="flex flex-col items-center gap-2 text-text-tertiary">
+                        <CalendarDays className="h-8 w-8 opacity-40" />
+                        <p className="text-sm">No events found</p>
+                      </div>
+                    </td>
+                  </tr>
+                )
+                : pagedEvents.map((event) => (
+                  <tr
+                    key={event.id}
+                    className="table-row-hover"
+                    style={{ borderBottom: "1px solid var(--color-border-subtle)" }}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        {event.image ? (
+                          <img
+                            src={event.image}
+                            alt=""
+                            className="h-8 w-12 rounded-md object-cover shrink-0"
+                            style={{ background: "var(--color-surface-overlay)" }}
+                            onError={(e) => { e.target.style.display = "none"; }}
+                          />
+                        ) : (
+                          <div
+                            className="h-8 w-12 rounded-md shrink-0 flex items-center justify-center"
+                            style={{ background: "var(--color-surface-inset)" }}
+                          >
+                            <CalendarDays className="h-3.5 w-3.5 text-text-tertiary" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-text-primary truncate max-w-[220px]">{event.title}</p>
+                          {event.source_url && (
+                            <a
+                              href={event.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-text-tertiary hover:text-text-secondary hover:underline transition-colors"
+                            >
+                              View source ↗
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant="default">{event.category || "other"}</Badge>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-text-secondary">{fmtDate(event.date)}</td>
+                    <td className="px-4 py-3 text-xs text-text-secondary max-w-[140px] truncate">{event.location || "—"}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-[10px] text-text-tertiary bg-surface-overlay border border-border rounded px-1.5 py-0.5">
+                        {SOURCE_LABELS[event.source] || event.source || "—"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        onClick={() => featuredMutation.mutate({ id: event.id, featured: !event.featured })}
+                        className={cn(
+                          "transition-colors",
+                          event.featured ? "text-warn" : "text-text-tertiary hover:text-warn"
+                        )}
+                        title={event.featured ? "Unfeature" : "Mark as featured"}
+                      >
+                        <Star className="h-3.5 w-3.5" fill={event.featured ? "currentColor" : "none"} />
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <Button variant="ghost" size="xs" onClick={() => setEditingEvent(event)}>Edit</Button>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          className="text-negative hover:bg-[#fef2f2]"
+                          onClick={() => handleDelete(event.id, event.title)}
+                          disabled={deleteMutation.isPending}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div
+            className="flex items-center justify-between px-4 py-3"
+            style={{ borderTop: "1px solid var(--color-border-subtle)" }}
+          >
+            <p className="text-xs text-text-tertiary">
+              {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filtered.length)} of {filtered.length}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="icon-sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <span className="text-xs text-text-secondary tabular-nums">{page} / {totalPages}</span>
+              <Button variant="secondary" size="icon-sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
         )}
-      </div>
+      </Card>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-slate-500">
-            Showing {pageStart + 1}–{Math.min(pageEnd, events.length)} of {events.length}
-          </p>
-          <div className="flex gap-2">
-            <button
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-            >
-              ← Prev
-            </button>
-            <span className="flex items-center px-3 text-sm text-slate-600">
-              {page} / {totalPages}
-            </span>
-            <button
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-            >
-              Next →
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Edit modal */}
       {editingEvent && (
         <EditModal
           event={editingEvent}
           onClose={() => setEditingEvent(null)}
-          onSave={handleSave}
+          onSave={(id, updates) => updateMutation.mutate({ id, updates })}
+          isPending={updateMutation.isPending}
         />
       )}
     </div>

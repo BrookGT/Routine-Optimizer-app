@@ -5,6 +5,7 @@ import {
   Brain,
   CalendarDays,
   CalendarRange,
+  ChevronDown,
   FlaskConical,
   MapPin,
   MessageSquareText,
@@ -14,7 +15,6 @@ import {
   Users,
   Wrench,
   X,
-  Zap,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/utils/cn";
@@ -23,12 +23,12 @@ const navGroups = [
   {
     label: "Overview",
     items: [
-      { to: "/dashboard", label: "System Health", icon: Activity },
+      { to: "/dashboard",  label: "System Health", icon: Activity },
       { to: "/analytics",  label: "Analytics",     icon: BarChart3 },
     ],
   },
   {
-    label: "User Data",
+    label: "Users & Data",
     items: [
       { to: "/users",           label: "Users",           icon: Users },
       { to: "/interactions",    label: "Interactions",    icon: MessageSquareText },
@@ -69,30 +69,29 @@ function NavItem({ item, onClick }) {
       onClick={onClick}
       className={({ isActive }) =>
         cn(
-          "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150",
+          "group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium",
+          "transition-colors duration-100",
           isActive
-            ? "bg-white/10 text-white shadow-sm"
-            : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+            ? "bg-canvas-active text-white"
+            : "text-canvas-text hover:bg-canvas-active/60 hover:text-canvas-textHover"
         )
       }
     >
       {({ isActive }) => (
         <>
-          {/* Icon pill */}
-          <span
-            className={cn(
-              "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-150",
-              isActive
-                ? "bg-gradient-to-br from-indigo-500 to-violet-500 shadow-sm shadow-indigo-500/30"
-                : "bg-white/5 group-hover:bg-white/10"
-            )}
-          >
-            <Icon className={cn("h-3.5 w-3.5", isActive ? "text-white" : "text-slate-400 group-hover:text-slate-200")} />
-          </span>
-          <span className="truncate">{item.label}</span>
           {isActive && (
-            <span className="ml-auto h-1.5 w-1.5 rounded-full bg-indigo-400 shrink-0" />
+            <span
+              className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-0.5 rounded-r bg-white/60"
+              aria-hidden="true"
+            />
           )}
+          <Icon
+            className={cn(
+              "h-[15px] w-[15px] shrink-0 transition-colors duration-100",
+              isActive ? "text-white/90" : "text-canvas-text group-hover:text-canvas-textHover"
+            )}
+          />
+          <span className="truncate leading-none">{item.label}</span>
         </>
       )}
     </NavLink>
@@ -102,19 +101,21 @@ function NavItem({ item, onClick }) {
 export default function Sidebar({ onNavigate, showClose = false }) {
   return (
     <aside
-      className="flex h-full w-64 flex-col overflow-hidden"
-      style={{ background: "linear-gradient(165deg, #0f0f1a 0%, #131325 60%, #0c0c18 100%)" }}
+      className="flex h-full w-[232px] shrink-0 flex-col select-none"
+      style={{ background: "var(--color-canvas)" }}
     >
-      {/* Logo */}
-      <div className="flex shrink-0 items-center justify-between px-5 py-5">
-        <div className="flex items-center gap-3">
-          {/* Logo mark */}
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-500/30">
-            <Zap className="h-4.5 w-4.5 text-white" />
+      {/* Logo / header */}
+      <div className="flex shrink-0 items-center justify-between px-4 pt-5 pb-4">
+        <div className="flex items-center gap-2.5">
+          <div
+            className="flex h-7 w-7 items-center justify-center rounded-md text-white text-xs font-bold"
+            style={{ background: "#292524", border: "1px solid rgba(255,255,255,0.12)" }}
+          >
+            W
           </div>
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-indigo-400">Wuloye</p>
-            <p className="text-sm font-bold text-white leading-none">Admin Console</p>
+            <p className="text-[13px] font-semibold text-white leading-none">Wuloye</p>
+            <p className="text-[10px] text-canvas-text mt-0.5 leading-none">Admin Console</p>
           </div>
         </div>
         {showClose && (
@@ -122,37 +123,39 @@ export default function Sidebar({ onNavigate, showClose = false }) {
             type="button"
             onClick={onNavigate}
             aria-label="Close sidebar"
-            className="rounded-lg p-1.5 text-slate-500 hover:bg-white/10 hover:text-slate-300 transition"
+            className="flex h-6 w-6 items-center justify-center rounded text-canvas-text hover:text-white hover:bg-canvas-active transition-colors"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
 
       {/* Divider */}
-      <div className="mx-5 mb-3 h-px bg-white/[0.06]" />
+      <div className="mx-4 mb-3 h-px" style={{ background: "var(--color-canvas-border)" }} />
 
-      {/* Nav */}
-      <nav className="sidebar-scroll flex flex-1 flex-col gap-5 overflow-y-auto px-3 pb-6">
-        {navGroups.map((group) => (
-          <div key={group.label}>
-            <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-600">
-              {group.label}
-            </p>
-            <div className="space-y-0.5">
-              {group.items.map((item) => (
-                <NavItem key={item.to} item={item} onClick={onNavigate} />
-              ))}
+      {/* Navigation */}
+      <nav className="sidebar-scroll flex flex-1 flex-col overflow-y-auto px-2.5 pb-5">
+        <div className="space-y-5">
+          {navGroups.map((group) => (
+            <div key={group.label}>
+              <p className="mb-1.5 px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-canvas-text/60 select-none">
+                {group.label}
+              </p>
+              <div className="space-y-px">
+                {group.items.map((item) => (
+                  <NavItem key={item.to} item={item} onClick={onNavigate} />
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </nav>
 
       {/* Footer */}
-      <div className="shrink-0 px-5 py-4 border-t border-white/[0.06]">
+      <div className="shrink-0 px-4 py-3" style={{ borderTop: "1px solid var(--color-canvas-border)" }}>
         <div className="flex items-center gap-2">
           <span className="dot-live" />
-          <span className="text-xs text-slate-500">Live monitoring active</span>
+          <span className="text-[11px] text-canvas-text/60">Live monitoring</span>
         </div>
       </div>
     </aside>

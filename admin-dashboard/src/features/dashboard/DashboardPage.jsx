@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Activity, AlertCircle, Clock, TrendingUp, Zap } from "lucide-react";
+import { Activity, AlertCircle, Clock, RefreshCw, TrendingUp } from "lucide-react";
 import { useFetch } from "@/hooks/useFetch";
 import { endpoints } from "@/services/endpoints";
 import { Badge } from "@/components/ui/badge";
@@ -10,27 +10,27 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, StatCard } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Alert } from "@/components/ui/alert";
-import { LoadingState } from "@/components/ui/loading";
+import { LoadingState, SkeletonCard } from "@/components/ui/loading";
 
 const REFRESH_MS     = 5000;
 const HISTORY_POINTS = 20;
 
-function getBadgeVariant(status) {
-  if (status === "ok")       return "success";
-  if (status === "degraded") return "warning";
-  if (status === "down")     return "danger";
-  return "default";
+function getStatusBadge(status) {
+  if (status === "ok")       return { variant: "success", label: "Healthy" };
+  if (status === "degraded") return { variant: "warning", label: "Degraded" };
+  if (status === "down")     return { variant: "danger",  label: "Down" };
+  return { variant: "default", label: "Unknown" };
 }
 
-const CustomTooltip = ({ active, payload, label }) => {
+const ChartTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-lg text-xs">
+    <div className="rounded-lg border border-border bg-white px-3 py-2 shadow-md text-xs">
       {payload.map((p) => (
         <div key={p.dataKey} className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
-          <span className="text-slate-500 capitalize">{p.dataKey}</span>
-          <span className="font-semibold text-slate-900 ml-1">{p.value}</span>
+          <span className="h-2 w-2 rounded-full shrink-0" style={{ background: p.color }} />
+          <span className="text-text-tertiary capitalize">{p.dataKey}</span>
+          <span className="font-semibold text-text-primary ml-auto pl-3 tabular-nums">{p.value}</span>
         </div>
       ))}
     </div>
@@ -44,6 +44,7 @@ export default function DashboardPage() {
   const metrics = metricsQuery.data?.data;
   const health  = healthQuery.data?.data;
   const status  = health?.status ?? "unknown";
+  const badge   = getStatusBadge(status);
 
   const [history, setHistory] = useState(
     Array.from({ length: HISTORY_POINTS }, (_, i) => ({ t: i, req: 0, err: 0 }))
@@ -53,7 +54,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!metrics) return;
-    const totalErrors = (metrics.errorCount4xx || 0) + (metrics.errorCount5xx || 0);
+    const totalErrors  = (metrics.errorCount4xx || 0) + (metrics.errorCount5xx || 0);
     const requestCount = metrics.requestCount || 0;
     const reqDelta = lastRef.current.request === null ? requestCount : Math.max(0, requestCount - lastRef.current.request);
     const errDelta = lastRef.current.error   === null ? totalErrors  : Math.max(0, totalErrors  - lastRef.current.error);
@@ -72,23 +73,27 @@ export default function DashboardPage() {
     ? new Date(metricsQuery.dataUpdatedAt).toLocaleTimeString()
     : "--";
 
+  const isLoading = metricsQuery.isLoading || healthQuery.isLoading;
+
   return (
-    <section className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="space-y-6">
+      {/* Page header */}
+      <div className="page-header">
         <div>
           <h2 className="page-title">System Health</h2>
-          <p className="page-sub">Real-time API status and performance metrics.</p>
+          <p className="page-sub">Real-time API status and performance metrics</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Badge variant={getBadgeVariant(status)} dot className="px-3 py-1 text-sm capitalize">
-            {status}
+        <div className="flex items-center gap-2.5">
+          <Badge variant={badge.variant} dot>
+            {badge.label}
           </Badge>
           <Button
             variant="secondary"
             size="sm"
             onClick={() => { healthQuery.refetch(); metricsQuery.refetch(); }}
+            disabled={isLoading}
           >
+            <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
             Refresh
           </Button>
         </div>
@@ -100,51 +105,58 @@ export default function DashboardPage() {
         </Alert>
       )}
 
-      {metricsQuery.isLoading && <LoadingState label="Loading system metrics…" />}
-
       {/* Stat cards */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          title="Total Requests"
-          value={metrics?.requestCount?.toLocaleString() ?? "--"}
-          sub="All-time API calls"
-          icon={Activity}
-          gradient="from-indigo-500 to-violet-500"
-        />
-        <StatCard
-          title="Error Count"
-          value={errorCount.toLocaleString()}
-          sub="4xx + 5xx combined"
-          icon={AlertCircle}
-          gradient={errorCount > 10 ? "from-rose-500 to-red-500" : "from-emerald-500 to-teal-500"}
-        />
-        <StatCard
-          title="Error Rate"
-          value={`${errorRate.toFixed(2)}%`}
-          sub="Errors / requests"
-          icon={TrendingUp}
-          gradient={errorRate > 5 ? "from-amber-500 to-orange-500" : "from-sky-500 to-blue-500"}
-        />
-        <StatCard
-          title="P95 Latency"
-          value={metrics?.p95Ms != null ? `${metrics.p95Ms} ms` : "--"}
-          sub="95th-percentile response"
-          icon={Clock}
-          gradient="from-purple-500 to-violet-500"
-        />
-      </div>
+      {isLoading ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            title="Total Requests"
+            value={metrics?.requestCount?.toLocaleString() ?? "—"}
+            sub="All-time API calls"
+            icon={Activity}
+          />
+          <StatCard
+            title="Total Errors"
+            value={errorCount.toLocaleString()}
+            sub="4xx + 5xx combined"
+            icon={AlertCircle}
+          />
+          <StatCard
+            title="Error Rate"
+            value={`${errorRate.toFixed(2)}%`}
+            sub="Errors / total requests"
+            icon={TrendingUp}
+          />
+          <StatCard
+            title="P95 Latency"
+            value={metrics?.p95Ms != null ? `${metrics.p95Ms} ms` : "—"}
+            sub="95th-percentile response"
+            icon={Clock}
+          />
+        </div>
+      )}
 
-      {/* Error rate bar */}
+      {/* Error rate progress */}
       <Card>
-        <CardContent className="py-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Error Rate Indicator</span>
-            <span className="text-xs font-bold text-slate-700">{errorRate.toFixed(2)}%</span>
+        <CardContent className="py-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="label-xs">Error Rate</span>
+            <span className="text-xs font-semibold text-text-primary tabular-nums">{errorRate.toFixed(2)}%</span>
           </div>
           <Progress
             value={Math.min(100, errorRate)}
-            colorClass={errorRate > 10 ? "bg-gradient-to-r from-rose-500 to-red-500" : errorRate > 3 ? "bg-gradient-to-r from-amber-400 to-orange-400" : "bg-gradient-to-r from-emerald-500 to-teal-500"}
+            variant={errorRate > 10 ? "negative" : errorRate > 3 ? "warn" : "positive"}
           />
+          <p className="mt-2 text-xs text-text-tertiary">
+            {errorRate > 10
+              ? "High error rate — investigate immediately"
+              : errorRate > 3
+              ? "Elevated error rate — monitor closely"
+              : "Error rate is within normal range"}
+          </p>
         </CardContent>
       </Card>
 
@@ -153,22 +165,29 @@ export default function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Request Volume</CardTitle>
-            <span className="text-xs text-slate-400">Rolling {HISTORY_POINTS} polls · {updatedAt}</span>
+            <span className="text-xs text-text-tertiary">Rolling {HISTORY_POINTS} polls · {updatedAt}</span>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-1">
             <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={history} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+              <AreaChart data={history} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
                 <defs>
                   <linearGradient id="gReq" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#6366f1" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                    <stop offset="5%"  stopColor="#44403c" stopOpacity={0.12} />
+                    <stop offset="95%" stopColor="#44403c" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#eeede9" />
                 <XAxis dataKey="t" tick={false} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="req" stroke="#6366f1" strokeWidth={2} fill="url(#gReq)" dot={false} />
+                <YAxis tick={{ fontSize: 10, fill: "#a8a29e" }} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTooltip />} />
+                <Area
+                  type="monotone"
+                  dataKey="req"
+                  stroke="#44403c"
+                  strokeWidth={1.5}
+                  fill="url(#gReq)"
+                  dot={false}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
@@ -177,51 +196,60 @@ export default function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Error Volume</CardTitle>
-            <span className="text-xs text-slate-400">Rolling {HISTORY_POINTS} polls</span>
+            <span className="text-xs text-text-tertiary">Rolling {HISTORY_POINTS} polls</span>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-1">
             <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={history} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+              <AreaChart data={history} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
                 <defs>
                   <linearGradient id="gErr" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#f43f5e" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
+                    <stop offset="5%"  stopColor="#dc2626" stopOpacity={0.1} />
+                    <stop offset="95%" stopColor="#dc2626" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#eeede9" />
                 <XAxis dataKey="t" tick={false} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="err" stroke="#f43f5e" strokeWidth={2} fill="url(#gErr)" dot={false} />
+                <YAxis tick={{ fontSize: 10, fill: "#a8a29e" }} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTooltip />} />
+                <Area
+                  type="monotone"
+                  dataKey="err"
+                  stroke="#dc2626"
+                  strokeWidth={1.5}
+                  fill="url(#gErr)"
+                  dot={false}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>
 
-      {/* Env info */}
+      {/* Environment info */}
       <Card>
         <CardHeader>
           <CardTitle>Environment</CardTitle>
-          <span className="flex items-center gap-1.5 text-xs text-slate-400">
+          <span className="flex items-center gap-1.5 text-xs text-text-tertiary">
             <span className="dot-live" />
-            Auto-refreshes every 5s
+            Auto-refreshes every 5 s
           </span>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            { label: "Environment", value: health?.environment ?? "--" },
-            { label: "Message",     value: health?.message     ?? "--" },
-            { label: "Firestore",   value: health?.firestore   ?? "--" },
-            { label: "Last Poll",   value: updatedAt },
-          ].map(({ label, value }) => (
-            <div key={label}>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
-            </div>
-          ))}
+        <CardContent>
+          <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { label: "Environment", value: health?.environment ?? "—" },
+              { label: "Status",      value: health?.message     ?? "—" },
+              { label: "Firestore",   value: health?.firestore   ?? "—" },
+              { label: "Last poll",   value: updatedAt },
+            ].map(({ label, value }) => (
+              <div key={label}>
+                <dt className="label-xs mb-1">{label}</dt>
+                <dd className="text-sm font-medium text-text-primary">{value}</dd>
+              </div>
+            ))}
+          </dl>
         </CardContent>
       </Card>
-    </section>
+    </div>
   );
 }

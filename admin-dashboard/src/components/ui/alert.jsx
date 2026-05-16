@@ -1,41 +1,32 @@
 import { cn } from "@/utils/cn";
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 
 const variants = {
-  error:   "bg-rose-50 border border-rose-200 text-rose-700",
-  info:    "bg-indigo-50 border border-indigo-200 text-indigo-700",
-  success: "bg-emerald-50 border border-emerald-200 text-emerald-700",
-  warning: "bg-amber-50 border border-amber-200 text-amber-700",
+  error:   { wrap: "bg-[#fef2f2] border-[#fecaca] text-[#991b1b]", Icon: AlertCircle },
+  info:    { wrap: "bg-surface-overlay border-border text-text-secondary", Icon: Info },
+  success: { wrap: "bg-[#f0fdf4] border-[#bbf7d0] text-[#166534]", Icon: CheckCircle2 },
+  warning: { wrap: "bg-[#fffbeb] border-[#fde68a] text-[#92400e]", Icon: AlertTriangle },
 };
 
-const icons = {
-  error:   "✕",
-  info:    "ℹ",
-  success: "✓",
-  warning: "⚠",
-};
-
-const iconColors = {
-  error:   "bg-rose-100 text-rose-600",
-  info:    "bg-indigo-100 text-indigo-600",
-  success: "bg-emerald-100 text-emerald-600",
-  warning: "bg-amber-100 text-amber-600",
-};
-
-export function Alert({ variant = "info", title, children, className }) {
+export function Alert({ variant = "info", title, children, onDismiss, className }) {
+  const { wrap, Icon } = variants[variant] ?? variants.info;
   return (
-    <div className={cn("flex items-start gap-3 rounded-xl p-3.5 text-sm", variants[variant], className)}>
-      <span
-        className={cn(
-          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold",
-          iconColors[variant]
-        )}
-      >
-        {icons[variant]}
-      </span>
-      <div>
+    <div className={cn("flex items-start gap-3 rounded-lg border px-4 py-3 text-sm", wrap, className)}>
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 opacity-80" />
+      <div className="flex-1 min-w-0">
         {title && <p className="font-semibold mb-0.5">{title}</p>}
-        <p className="leading-snug">{children}</p>
+        <p className="leading-snug opacity-90">{children}</p>
       </div>
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="ml-auto -mr-1 -mt-0.5 rounded p-1 opacity-50 hover:opacity-100 transition-opacity"
+          aria-label="Dismiss"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
     </div>
   );
 }
