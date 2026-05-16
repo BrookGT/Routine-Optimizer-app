@@ -83,8 +83,8 @@ export default function ExperimentsPage() {
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {[variantA, variantB].map((variant) => (
-          <Card key={variant?.label ?? "variant"}>
+        {[variantA, variantB].map((variant, idx) => (
+          <Card key={variant?.label ?? `experiment-slot-${idx}`}>
             <CardHeader>
               <CardTitle>{variant?.label ?? "Variant"}</CardTitle>
             </CardHeader>

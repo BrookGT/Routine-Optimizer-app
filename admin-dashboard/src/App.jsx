@@ -10,6 +10,11 @@ import AiModelPage from "@/features/aiModel/AiModelPage";
 import RoutinesPage from "@/features/routines/RoutinesPage";
 import DevToolsPage from "@/features/devTools/DevToolsPage";
 import EventsPage from "@/features/events/EventsPage";
+import SystemPage from "@/features/system/SystemPage";
+import PlacesPage from "@/features/places/PlacesPage";
+import AnalyticsPage from "@/features/analytics/AnalyticsPage";
+import ModerationPage from "@/features/moderation/ModerationPage";
+import NotificationsPage from "@/features/notifications/NotificationsPage";
 
 export default function App() {
   return (
@@ -18,12 +23,17 @@ export default function App() {
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/users" element={<UsersPage />} />
+          <Route path="/places" element={<PlacesPage />} />
           <Route path="/interactions" element={<InteractionsPage />} />
           <Route path="/recommendations" element={<RecommendationsPage />} />
           <Route path="/ai-model" element={<AiModelPage />} />
           <Route path="/experiments" element={<ExperimentsPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/moderation" element={<ModerationPage />} />
           <Route path="/routines" element={<RoutinesPage />} />
           <Route path="/events" element={<EventsPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/system" element={<SystemPage />} />
           <Route path="/dev-tools" element={<DevToolsPage />} />
         </Route>
       </Route>
