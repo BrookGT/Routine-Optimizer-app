@@ -90,158 +90,113 @@ export default function InteractionsPage() {
   };
 
   return (
-    <section className="space-y-6">
-      <div>
-        <h3 className="text-2xl font-bold text-slate-900">Interaction Analytics</h3>
-        <p className="text-sm text-slate-500">Track how users engage with recommendations.</p>
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">Interactions</h2>
+          <p className="page-sub">Track how users engage with recommendations</p>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                Action Type
-              </label>
-              <select
-                className="mt-2 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700"
-                value={actionFilter}
-                onChange={(event) => setActionFilter(event.target.value)}
-              >
-                {ACTION_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                Start Date
-              </label>
-              <input
-                type="date"
-                className="mt-2 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700"
-                value={startDate}
-                onChange={(event) => setStartDate(event.target.value)}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-                End Date
-              </label>
-              <input
-                type="date"
-                className="mt-2 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700"
-                value={endDate}
-                onChange={(event) => setEndDate(event.target.value)}
-              />
-            </div>
-            <div className="flex items-end">
-              <Button type="button" variant="secondary" onClick={handleClear}>
-                Clear Filters
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Filters */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1">
+          <label className="label-xs">Action type</label>
+          <select className="input-base w-32" value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
+            {ACTION_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+        <div className="space-y-1">
+          <label className="label-xs">Start date</label>
+          <input type="date" className="input-base w-40" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label className="label-xs">End date</label>
+          <input type="date" className="input-base w-40" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        </div>
+        <Button variant="secondary" size="sm" onClick={handleClear}>Clear</Button>
+      </div>
 
-      {interactionsQuery.isLoading && <LoadingState label="Loading interactions..." />}
+      {interactionsQuery.isLoading && <LoadingState label="Loading interactions…" />}
+      {interactionsQuery.isError && <Alert variant="error">{getFriendlyError(interactionsQuery.error)}</Alert>}
 
-      {interactionsQuery.isError && (
-        <Alert variant="error">{getFriendlyError(interactionsQuery.error)}</Alert>
-      )}
-
+      {/* Stats */}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader>
-            <CardTitle>Clicks vs Saves vs Dismiss</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">Clicks</span>
-                <span className="font-semibold text-slate-900">{breakdown.click}</span>
+          <CardHeader><CardTitle>Action Breakdown</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {[
+              { label: "Clicks",  value: breakdown.click,   variant: "default" },
+              { label: "Saves",   value: breakdown.save,    variant: "positive" },
+              { label: "Dismiss", value: breakdown.dismiss, variant: "negative" },
+            ].map(({ label, value, variant }) => (
+              <div key={label} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-text-secondary">{label}</span>
+                  <span className="font-medium text-text-primary tabular-nums">{value}</span>
+                </div>
+                <Progress value={getPercent(value)} variant={variant} />
               </div>
-              <Progress value={getPercent(breakdown.click)} />
-            </div>
-            <div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">Saves</span>
-                <span className="font-semibold text-slate-900">{breakdown.save}</span>
-              </div>
-              <Progress value={getPercent(breakdown.save)} className="[&>div]:bg-emerald-500" />
-            </div>
-            <div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">Dismiss</span>
-                <span className="font-semibold text-slate-900">{breakdown.dismiss}</span>
-              </div>
-              <Progress value={getPercent(breakdown.dismiss)} className="[&>div]:bg-rose-500" />
-            </div>
+            ))}
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Summary</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-slate-600">
-            <div className="flex items-center justify-between">
-              <span>Total interactions</span>
-              <span className="font-semibold text-slate-900">{interactions.length}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Filtered results</span>
-              <span className="font-semibold text-slate-900">{filteredInteractions.length}</span>
-            </div>
-            <div className="text-xs text-slate-400">
-              Updated every 10s. Adjust filters to explore behavior patterns.
-            </div>
+          <CardHeader><CardTitle>Summary</CardTitle></CardHeader>
+          <CardContent>
+            {[
+              { label: "Total interactions", value: interactions.length.toLocaleString() },
+              { label: "Filtered results",   value: filteredInteractions.length.toLocaleString() },
+            ].map(({ label, value }) => (
+              <div key={label} className="flex items-center justify-between py-2.5 border-b border-border-subtle last:border-0">
+                <span className="text-xs text-text-secondary">{label}</span>
+                <span className="text-xs font-medium text-text-primary tabular-nums">{value}</span>
+              </div>
+            ))}
+            <p className="text-xs text-text-tertiary mt-3">Updated every 10 s · adjust filters to explore behavior patterns</p>
           </CardContent>
         </Card>
       </div>
 
+      {/* Log table */}
       <Card>
-        <CardHeader>
-          <CardTitle>Interaction Log</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {filteredInteractions.length === 0 ? (
-            <p className="text-sm text-slate-400">No interactions match the current filters.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead className="text-xs uppercase text-slate-400">
+        <CardHeader><CardTitle>Interaction Log</CardTitle></CardHeader>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
+                {["Place ID", "Action", "Score", "Timestamp"].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left" style={{ background: "var(--color-surface-overlay)" }}>
+                    <span className="label-xs">{h}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredInteractions.length === 0
+                ? (
                   <tr>
-                    <th className="pb-2 pr-4">Place</th>
-                    <th className="pb-2 pr-4">Action</th>
-                    <th className="pb-2 pr-4">Score</th>
-                    <th className="pb-2 pr-4">Timestamp</th>
+                    <td colSpan={4} className="px-4 py-12 text-center text-sm text-text-tertiary">
+                      No interactions match the current filters.
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="text-slate-700">
-                  {filteredInteractions.map((item) => (
-                    <tr key={item.id} className="border-t border-slate-100">
-                      <td className="py-2 pr-4 font-medium text-slate-900">{item.placeId}</td>
-                      <td className="py-2 pr-4">
-                        <Badge variant={ACTION_VARIANTS[item.actionType] || "default"}>
-                          {item.actionType}
-                        </Badge>
-                      </td>
-                      <td className="py-2 pr-4 font-semibold text-slate-900">{item.score}</td>
-                      <td className="py-2 pr-4 text-slate-500">{formatDate(item.createdAt)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
+                )
+                : filteredInteractions.map((item) => (
+                  <tr key={item.id} className="table-row-hover" style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
+                    <td className="px-4 py-3 font-mono text-xs text-text-primary max-w-[180px] truncate">{item.placeId}</td>
+                    <td className="px-4 py-3">
+                      <Badge variant={ACTION_VARIANTS[item.actionType] || "default"}>{item.actionType}</Badge>
+                    </td>
+                    <td className="px-4 py-3 text-xs font-medium text-text-primary tabular-nums">{item.score ?? "—"}</td>
+                    <td className="px-4 py-3 text-xs text-text-tertiary">{formatDate(item.createdAt)}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
       </Card>
-    </section>
+    </div>
   );
 }

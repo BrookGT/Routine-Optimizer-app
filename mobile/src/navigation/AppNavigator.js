@@ -17,6 +17,8 @@ import SavedPlacesScreen from "../screens/SavedPlacesScreen";
 import EventsScreen from "../screens/EventsScreen";
 import NotificationPermissionScreen from "../screens/NotificationPermissionScreen";
 import NotificationSettingsScreen from "../screens/NotificationSettingsScreen";
+import RemindersScreen from "../screens/RemindersScreen";
+import ReminderEditorScreen from "../screens/ReminderEditorScreen";
 import MainTabs from "./MainTabs";
 import { useAppTheme } from "../context/ThemeContext";
 
@@ -253,6 +255,30 @@ export default function AppNavigator() {
             <Stack.Screen
                 name="NotificationSettings"
                 component={NotificationSettingsScreen}
+                options={{
+                    animation: Platform.select({
+                        ios: "slide_from_right",
+                        android: "slide_from_right",
+                        default: "fade",
+                    }),
+                    gestureEnabled: true,
+                }}
+            />
+            <Stack.Screen
+                name="Reminders"
+                component={RemindersScreen}
+                options={{
+                    animation: Platform.select({
+                        ios: "slide_from_right",
+                        android: "slide_from_right",
+                        default: "fade",
+                    }),
+                    gestureEnabled: true,
+                }}
+            />
+            <Stack.Screen
+                name="ReminderEditor"
+                component={ReminderEditorScreen}
                 options={{
                     animation: Platform.select({
                         ios: "slide_from_right",

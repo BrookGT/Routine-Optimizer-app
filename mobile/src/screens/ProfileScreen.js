@@ -608,6 +608,41 @@ export default function ProfileScreen({ navigation }) {
 
                     <Pressable
                         style={styles.actionCard}
+                        onPress={() => navigation.navigate("Reminders")}
+                        accessibilityRole="button"
+                        accessibilityLabel="Custom reminders"
+                    >
+                        <View style={styles.actionCardLeft}>
+                            <View
+                                style={[
+                                    styles.actionIconWrap,
+                                    { backgroundColor: "rgba(38,201,122,0.16)" },
+                                ]}
+                            >
+                                <Ionicons
+                                    name="alarm-outline"
+                                    size={18}
+                                    color={palette.mint}
+                                />
+                            </View>
+                            <View>
+                                <Text style={styles.actionCardTitle}>
+                                    Custom reminders
+                                </Text>
+                                <Text style={styles.actionCardSub}>
+                                    Your events, workouts, prayer, and tasks
+                                </Text>
+                            </View>
+                        </View>
+                        <Ionicons
+                            name="chevron-forward"
+                            size={18}
+                            color={palette.textMuted}
+                        />
+                    </Pressable>
+
+                    <Pressable
+                        style={styles.actionCard}
                         onPress={() => navigation.navigate("ProfileSetup")}
                         accessibilityRole="button"
                     >
