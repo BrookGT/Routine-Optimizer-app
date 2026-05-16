@@ -1,13 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-    Alert,
-    FlatList,
-    Modal,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
-} from "react-native";
+import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect } from "@react-navigation/native";
@@ -16,7 +8,6 @@ import PlaceCard from "../components/PlaceCard";
 import EmptyState from "../components/EmptyState";
 import Loader from "../components/Loader";
 import TopGreetingBanner from "../components/TopGreetingBanner";
-import { getProfile } from "../api/profileApi";
 import {
     createInteraction,
     createInteractionsBatch,
@@ -27,14 +18,59 @@ import {
 } from "../api/recommendationApi";
 import { INTERACTION_TYPES } from "../utils/constants";
 import { normalisePlace } from "../utils/recommendationPlaces";
-import { getApiErrorMessage, unwrapApiData } from "../utils/api";
+import { getApiErrorMessage } from "../utils/api";
 import { useAppTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
 import { useNotifications } from "../context/NotificationContext";
 import useLocation from "../hooks/useLocation";
+import { prefetchPlaceDetails } from "../api/placeApi";
 import {
     extractNavigationFromData,
     normalizeNavigateTarget,
 } from "../services/notificationService";
+
+/**
+ * Greeting label: username (new onboarding v3) → legacy first name → fallback.
+ * Username is now the primary identity field.
+ */
+function getGreetingName(profile) {
+    const username = profile?.username?.trim();
+    if (username) return username;
+    const name = profile?.name?.trim();
+    if (name) return name.split(/\s+/)[0];
+    return "there";
+}
+
+function getGreetingMeta(date, name) {
+    const hour = date.getHours();
+    const firstName = name?.trim() || "there";
+
+    if (hour >= 5 && hour < 12) {
+        return {
+            greeting: `Good morning, ${firstName}`,
+            headline: "Start your day with places that match your vibe",
+        };
+    }
+
+    if (hour >= 12 && hour < 17) {
+        return {
+            greeting: `Good afternoon, ${firstName}`,
+            headline: "Take a refreshing break with a great nearby spot",
+        };
+    }
+
+    if (hour >= 17 && hour < 22) {
+        return {
+            greeting: `Good evening, ${firstName}`,
+            headline: "Unwind tonight with handpicked places for you",
+        };
+    }
+
+    return {
+        greeting: `Good night, ${firstName}`,
+        headline: "Late hours, calm energy, and recommendations just for you",
+    };
+}
 
 function notificationTypeLabel(type) {
     switch (type) {
@@ -103,43 +139,13 @@ function formatNotifTimeRelative(iso) {
     }
 }
 
-function getGreetingMeta(date, name) {
-    const hour = date.getHours();
-    const firstName = name?.trim() || "there";
-
-    if (hour >= 5 && hour < 12) {
-        return {
-            greeting: `Good morning, ${firstName}`,
-            headline: "Start your day with places that match your vibe",
-        };
-    }
-
-    if (hour >= 12 && hour < 17) {
-        return {
-            greeting: `Good afternoon, ${firstName}`,
-            headline: "Take a refreshing break with a great nearby spot",
-        };
-    }
-
-    if (hour >= 17 && hour < 22) {
-        return {
-            greeting: `Good evening, ${firstName}`,
-            headline: "Unwind tonight with handpicked places for you",
-        };
-    }
-
-    return {
-        greeting: `Good night, ${firstName}`,
-        headline: "Late hours, calm energy, and recommendations just for you",
-    };
-}
-
 export default function HomeScreen({ navigation }) {
     const { palette, gradients, isDark } = useAppTheme();
     const styles = useMemo(
         () => createStyles(palette, isDark),
         [palette, isDark],
     );
+    const { profile, refreshProfile } = useAuth();
 
     const {
         inbox,
@@ -153,11 +159,12 @@ export default function HomeScreen({ navigation }) {
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    const [name, setName] = useState("there");
     const [places, setPlaces] = useState([]);
     const [refreshing, setRefreshing] = useState(false);
     const [now, setNow] = useState(() => new Date());
     const [aiMeta, setAiMeta] = useState(null);
+    const [likedPlaceIds, setLikedPlaceIds] = useState(() => new Set());
+    const [savedPlaceIds, setSavedPlaceIds] = useState(() => new Set());
     const refreshTimerRef = useRef(null);
     /** After one attempt to read GPS (success or deny) — avoids a Firestore-only flash before coords arrive. */
     const [geoPrimed, setGeoPrimed] = useState(false);
@@ -195,13 +202,11 @@ export default function HomeScreen({ navigation }) {
             setLoading(true);
             setError("");
 
-            const [profileEnvelope, recommendationsEnvelope] =
-                await Promise.all([
-                    getProfile(),
-                    getRecommendations(recommendationParams),
-                ]);
+            const [, recommendationsEnvelope] = await Promise.all([
+                refreshProfile(),
+                getRecommendations(recommendationParams),
+            ]);
 
-            const profileData = unwrapApiData(profileEnvelope, {});
             const { recommendations, meta } = parseRecommendationsResponse(
                 recommendationsEnvelope,
             );
@@ -211,7 +216,6 @@ export default function HomeScreen({ navigation }) {
                   )
                 : [];
 
-            setName(profileData?.name?.trim() || "there");
             setPlaces(mapped);
             setAiMeta(meta?.ai ?? null);
 
@@ -234,7 +238,7 @@ export default function HomeScreen({ navigation }) {
         } finally {
             setLoading(false);
         }
-    }, [recommendationParams]);
+    }, [recommendationParams, refreshProfile]);
 
     useEffect(() => {
         if (!geoPrimed) return;
@@ -306,42 +310,52 @@ export default function HomeScreen({ navigation }) {
         navigation.navigate("PlaceDetail", { place });
     }
 
-    async function handleSave(place) {
-        try {
-            await createInteraction({
-                placeId: place.placeId,
-                actionType: INTERACTION_TYPES.SAVE,
-                metadata: {
-                    source: "home_feed",
-                    place,
-                },
-            });
-            Alert.alert(
-                "Saved",
-                "Place added to your saved list. View it anytime under Profile → Saved places.",
-            );
-            scheduleRefresh();
-        } catch (err) {
-            Alert.alert("Unable to save", getApiErrorMessage(err));
-        }
+    function handleSave(place) {
+        const id = place.placeId ?? place.id;
+        // Optimistic: mark saved immediately in the Set, then sync in background
+        setSavedPlaceIds((prev) => {
+            const next = new Set(prev);
+            next.add(id);
+            return next;
+        });
+        createInteraction({
+            placeId: id,
+            actionType: INTERACTION_TYPES.SAVE,
+            metadata: { source: "home_feed" },
+        }).catch(() => null);
+        scheduleRefresh();
     }
 
-    async function handleDismiss(place) {
-        try {
-            await createInteraction({
-                placeId: place.placeId,
-                actionType: INTERACTION_TYPES.DISMISS,
-                metadata: {
-                    source: "home_feed",
-                    place,
-                },
-            });
-            setPlaces((current) =>
-                current.filter((item) => item.placeId !== place.placeId),
-            );
+    function handleDismiss(place) {
+        const id = place.placeId ?? place.id;
+        // Optimistic: remove from list instantly
+        setPlaces((current) =>
+            current.filter((item) => (item.placeId ?? item.id) !== id),
+        );
+        createInteraction({
+            placeId: id,
+            actionType: INTERACTION_TYPES.DISMISS,
+            metadata: { source: "home_feed" },
+        }).catch(() => null);
+        scheduleRefresh();
+    }
+
+    function handleLike(place) {
+        const id = place.placeId ?? place.id;
+        const already = likedPlaceIds.has(id);
+        setLikedPlaceIds((prev) => {
+            const next = new Set(prev);
+            if (already) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+        if (!already) {
+            createInteraction({
+                placeId: id,
+                actionType: INTERACTION_TYPES.LIKE,
+                metadata: { source: "home_feed" },
+            }).catch(() => null);
             scheduleRefresh();
-        } catch (err) {
-            Alert.alert("Unable to dismiss", getApiErrorMessage(err));
         }
     }
 
@@ -357,7 +371,14 @@ export default function HomeScreen({ navigation }) {
     }
 
     const data = useMemo(() => places, [places]);
-    const greetingMeta = useMemo(() => getGreetingMeta(now, name), [now, name]);
+    const greetingName = useMemo(
+        () => getGreetingName(profile),
+        [profile],
+    );
+    const greetingMeta = useMemo(
+        () => getGreetingMeta(now, greetingName),
+        [now, greetingName],
+    );
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -404,9 +425,7 @@ export default function HomeScreen({ navigation }) {
                                         </Pressable>
                                     ) : null}
                                     <Pressable
-                                        onPress={() =>
-                                            setNotifPanelOpen(false)
-                                        }
+                                        onPress={() => setNotifPanelOpen(false)}
                                         style={styles.notifModalClose}
                                         hitSlop={10}
                                     >
@@ -426,12 +445,11 @@ export default function HomeScreen({ navigation }) {
                                         color={palette.textMuted}
                                     />
                                     <Text style={styles.notifEmptyTitle}>
-                                        You’re all caught up
+                                        You're all caught up
                                     </Text>
                                     <Text style={styles.notifEmptySub}>
-                                        Alerts from your AI assistant will show
-                                        up here. Adjust times in Profile →
-                                        Notifications.
+                                        Alerts from your AI assistant will show up here.
+                                        Adjust times in Profile → Notifications.
                                     </Text>
                                 </View>
                             ) : (
@@ -439,9 +457,7 @@ export default function HomeScreen({ navigation }) {
                                     data={inbox}
                                     keyExtractor={(item) => item.id}
                                     style={styles.notifList}
-                                    contentContainerStyle={
-                                        styles.notifListContent
-                                    }
+                                    contentContainerStyle={styles.notifListContent}
                                     renderItem={({ item }) => {
                                         const unread = !item.read;
                                         const t = item.data?.type;
@@ -452,14 +468,10 @@ export default function HomeScreen({ navigation }) {
                                             <Pressable
                                                 style={({ pressed }) => [
                                                     styles.notifRow,
-                                                    pressed && {
-                                                        opacity: 0.92,
-                                                    },
+                                                    pressed && { opacity: 0.92 },
                                                 ]}
                                                 onPress={() =>
-                                                    handleNotificationRowPress(
-                                                        item,
-                                                    )
+                                                    handleNotificationRowPress(item)
                                                 }
                                             >
                                                 <View
@@ -476,53 +488,31 @@ export default function HomeScreen({ navigation }) {
                                                     />
                                                 </View>
                                                 <View style={styles.notifRowBody}>
-                                                    <View
-                                                        style={
-                                                            styles.notifRowMeta
-                                                        }
-                                                    >
-                                                        <Text
-                                                            style={
-                                                                styles.notifRowKind
-                                                            }
-                                                        >
-                                                            {notificationTypeLabel(
-                                                                t,
-                                                            )}
+                                                    <View style={styles.notifRowMeta}>
+                                                        <Text style={styles.notifRowKind}>
+                                                            {notificationTypeLabel(t)}
                                                         </Text>
-                                                        <Text
-                                                            style={
-                                                                styles.notifRowTime
-                                                            }
-                                                        >
+                                                        <Text style={styles.notifRowTime}>
                                                             {formatNotifTimeRelative(
                                                                 item.receivedAt,
                                                             )}
                                                         </Text>
                                                     </View>
                                                     <Text
-                                                        style={
-                                                            styles.notifRowTitle
-                                                        }
+                                                        style={styles.notifRowTitle}
                                                         numberOfLines={1}
                                                     >
                                                         {item.title}
                                                     </Text>
                                                     <Text
-                                                        style={
-                                                            styles.notifRowBodyText
-                                                        }
+                                                        style={styles.notifRowBodyText}
                                                         numberOfLines={2}
                                                     >
                                                         {item.body}
                                                     </Text>
                                                 </View>
                                                 {unread ? (
-                                                    <View
-                                                        style={
-                                                            styles.notifUnreadDot
-                                                        }
-                                                    />
+                                                    <View style={styles.notifUnreadDot} />
                                                 ) : null}
                                                 <Ionicons
                                                     name="chevron-forward"
@@ -612,6 +602,12 @@ export default function HomeScreen({ navigation }) {
                             <PlaceCard
                                 place={item}
                                 onPress={() => handleOpenDetail(item)}
+                                onPressIn={() =>
+                                    prefetchPlaceDetails(item.placeId ?? item.id)
+                                }
+                                liked={likedPlaceIds.has(item.placeId ?? item.id)}
+                                saved={savedPlaceIds.has(item.placeId ?? item.id)}
+                                onLike={() => handleLike(item)}
                                 onSave={() => handleSave(item)}
                                 onDismiss={() => handleDismiss(item)}
                             />
@@ -773,7 +769,7 @@ function createStyles(palette, isDark) {
             paddingHorizontal: 12,
             marginBottom: 8,
             borderRadius: 16,
-            backgroundColor: isDark ? palette.surface : palette.surface,
+            backgroundColor: palette.surface,
             borderWidth: 1,
             borderColor: palette.borderSoft,
             gap: 10,

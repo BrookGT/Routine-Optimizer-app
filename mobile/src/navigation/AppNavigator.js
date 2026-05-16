@@ -148,9 +148,6 @@ export default function AppNavigator() {
     const onboarded = hasCompletedOnboarding(profile);
     const initialRouteName = onboarded ? "MainTabs" : "ProfileSetup";
 
-    // ── 5. Show notification permission explanation if needed ─────────────
-    // Only shown to users who have completed onboarding so we never
-    // interrupt the profile setup / routine builder flows.
     if (onboarded && showPermissionScreen) {
         return (
             <NotificationPermissionScreen

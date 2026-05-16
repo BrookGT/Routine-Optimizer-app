@@ -65,7 +65,10 @@ export default function TopGreetingBanner({
                         />
                     </LinearGradient>
                     {actionBadgeCount > 0 ? (
-                        <View style={styles.badge} accessibilityLabel={`${actionBadgeCount} unread notifications`}>
+                        <View
+                            style={styles.badge}
+                            accessibilityLabel={`${actionBadgeCount} unread notifications`}
+                        >
                             <Text style={styles.badgeText}>
                                 {actionBadgeCount > 99 ? "99+" : actionBadgeCount}
                             </Text>
