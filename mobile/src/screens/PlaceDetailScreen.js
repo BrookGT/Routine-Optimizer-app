@@ -2,6 +2,7 @@ import {
     Alert,
     Animated,
     Dimensions,
+    Image,
     Linking,
     Platform,
     Pressable,
@@ -17,12 +18,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MapView, { Marker } from "react-native-maps";
 import { createInteraction } from "../api/interactionApi";
 import { INTERACTION_TYPES } from "../utils/constants";
-import { getApiErrorMessage } from "../utils/api";
 import { enrichPlaceLocation } from "../utils/placeLocation";
 import { effectivePricingEnabled } from "../utils/pricingDisplay";
 import { useAppTheme } from "../context/ThemeContext";
-import AuthenticatedPlacePhoto from "../components/AuthenticatedPlacePhoto";
+import AuthenticatedPlacePhoto, {
+    toPlacePhotoAbsoluteUri,
+} from "../components/AuthenticatedPlacePhoto";
 import { fetchPlaceDetails } from "../api/placeApi";
+import PlaceInteractionBar from "../components/PlaceInteractionBar";
+import { usePlaceInteractions } from "../hooks/usePlaceInteractions";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -36,6 +40,15 @@ function hashString(s) {
         h = Math.imul(h, 16777619);
     }
     return Math.abs(h);
+}
+
+/** True when we should call GET /places/:id (backend resolves Google + Firestore). */
+function shouldFetchPlaceDetails(placeId) {
+    if (typeof placeId !== "string" || placeId.length < 4) return false;
+    const id = placeId.trim();
+    if (id.startsWith("evt_")) return false;
+    if (/^(?:Recommended )?place-\d+$/i.test(id)) return false;
+    return true;
 }
 
 function openMapsExternal(lat, lng, label) {
@@ -352,7 +365,7 @@ function ImageCarousel({ place, isDark, onBack, onSave, isSaved }) {
                 ]}
             >
                 <Ionicons
-                    name={isSaved ? "heart" : "heart-outline"}
+                    name={isSaved ? "bookmark" : "bookmark-outline"}
                     size={19}
                     color="#fff"
                 />
@@ -888,7 +901,7 @@ function ReviewsTab({ place, palette, isDark, styles, detailLoading }) {
                 </View>
             </View>
 
-            {detailLoading && placeIdStr.startsWith("ChIJ") ? (
+            {detailLoading ? (
                 <Text
                     style={[
                         styles.reviewEmptyHint,
@@ -1195,18 +1208,24 @@ export default function PlaceDetailScreen({ navigation, route }) {
     const raw = route?.params?.place;
     const placeId = raw?.placeId ?? raw?.id;
 
-    // Only call Places Detail API for real Google place IDs.
-    // Event IDs start with "evt_" and Firestore IDs don't come from Google.
-    const isGooglePlaceId =
-        typeof placeId === "string" &&
-        placeId.startsWith("ChIJ");
+    const shouldFetchDetails = shouldFetchPlaceDetails(
+        typeof placeId === "string" ? placeId : "",
+    );
 
     const [detailPatch, setDetailPatch] = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
 
     useEffect(() => {
+        const first =
+            (Array.isArray(raw?.images) && raw.images[0]) ||
+            (typeof raw?.image === "string" ? raw.image : null);
+        const uri = toPlacePhotoAbsoluteUri(first);
+        if (uri) Image.prefetch(uri).catch(() => null);
+    }, [raw?.placeId, raw?.id, raw?.image]);
+
+    useEffect(() => {
         setDetailPatch(null);
-        if (!placeId || !isGooglePlaceId) {
+        if (!placeId || !shouldFetchDetails) {
             setDetailLoading(false);
             return;
         }
@@ -1223,7 +1242,7 @@ export default function PlaceDetailScreen({ navigation, route }) {
         return () => {
             cancelled = true;
         };
-    }, [placeId, isGooglePlaceId]);
+    }, [placeId, shouldFetchDetails]);
 
     const place = useMemo(() => {
         const merged = { ...(raw ?? {}), ...detailPatch };
@@ -1232,31 +1251,47 @@ export default function PlaceDetailScreen({ navigation, route }) {
 
     const [activeTab, setActiveTab] = useState("Overview");
     const [isSaved, setIsSaved] = useState(false);
+    const [isLiked, setIsLiked] = useState(false);
+    const [isDisliked, setIsDisliked] = useState(false);
     const saveAnim = useRef(new Animated.Value(1)).current;
+    const openedAtRef = useRef(Date.now());
 
     const bottomPad = Math.max(insets.bottom, 12) + 8;
 
-    async function logAction(actionType, successMessage) {
-        try {
-            await createInteraction({
-                placeId: place?.placeId ?? place?.id,
-                actionType,
-                metadata: { source: "place_detail", place },
-            });
-            if (successMessage) Alert.alert("Done", successMessage);
-        } catch (error) {
-            Alert.alert("Action failed", getApiErrorMessage(error));
-        }
-    }
+    const interactions = usePlaceInteractions(place, {
+        source: "place_detail",
+        onAfterNegative: () => navigation.goBack(),
+    });
 
-    async function handleSave() {
-        const newSaved = !isSaved;
-        setIsSaved(newSaved);
+    // Log view on open; long view when leaving after 5+ seconds
+    useEffect(() => {
+        const pid = place?.placeId ?? place?.id;
+        if (!pid) return undefined;
+        openedAtRef.current = Date.now();
+        createInteraction({
+            placeId: pid,
+            actionType: INTERACTION_TYPES.VIEW,
+            metadata: { source: "place_detail" },
+        }).catch(() => null);
+        return () => {
+            const secs = (Date.now() - openedAtRef.current) / 1000;
+            if (secs >= 5) {
+                createInteraction({
+                    placeId: pid,
+                    actionType: INTERACTION_TYPES.VIEW_LONG,
+                    metadata: {
+                        source: "place_detail",
+                        durationSec: Math.round(secs),
+                    },
+                }).catch(() => null);
+            }
+        };
+    }, [place?.placeId, place?.id]);
 
-        // Bounce animation
+    function bounceSaveIcon() {
         Animated.sequence([
             Animated.spring(saveAnim, {
-                toValue: 1.3,
+                toValue: 1.25,
                 useNativeDriver: true,
                 friction: 4,
             }),
@@ -1266,29 +1301,56 @@ export default function PlaceDetailScreen({ navigation, route }) {
                 friction: 6,
             }),
         ]).start();
-
-        await logAction(
-            newSaved ? INTERACTION_TYPES.SAVE : INTERACTION_TYPES.DISMISS,
-            newSaved
-                ? "Place saved. Find it anytime under Profile → Saved places."
-                : null,
-        );
     }
 
-    async function handleDismiss() {
-        await logAction(
-            INTERACTION_TYPES.DISMISS,
-            "We'll show fewer places like this.",
-        );
-        navigation.goBack();
+    async function handleSave() {
+        const next = await interactions.handleSave(isSaved);
+        setIsSaved(next);
+        bounceSaveIcon();
+        if (next) {
+            Alert.alert(
+                "Saved",
+                "Find this place anytime under Profile → Saved places.",
+            );
+        }
     }
 
-    async function handleCta() {
-        await logAction(INTERACTION_TYPES.CLICK);
-        Alert.alert(
-            getCtaLabel(place?.type ?? ""),
-            `Coming soon! We'll add full booking for ${place?.name ?? "this place"} soon.`,
-        );
+    async function handleCarouselSave() {
+        await handleSave();
+    }
+
+    async function handleLike() {
+        if (isLiked) return;
+        setIsLiked(true);
+        setIsDisliked(false);
+        await interactions.handleLike();
+    }
+
+    async function handleDislike() {
+        if (isDisliked) {
+            navigation.goBack();
+            return;
+        }
+        setIsDisliked(true);
+        setIsLiked(false);
+        await interactions.handleDislike();
+    }
+
+    async function handleShare() {
+        await interactions.handleShare();
+    }
+
+    async function handleDirections() {
+        await interactions.handleDirections();
+    }
+
+    async function handleNotInterested() {
+        setIsDisliked(true);
+        await interactions.handleNotInterested();
+    }
+
+    async function handleBottomDismiss() {
+        await interactions.handleDismiss();
     }
 
     // Parse numeric score for star display
@@ -1324,7 +1386,7 @@ export default function PlaceDetailScreen({ navigation, route }) {
                     place={place}
                     isDark={isDark}
                     onBack={() => navigation.goBack()}
-                    onSave={handleSave}
+                    onSave={handleCarouselSave}
                     isSaved={isSaved}
                 />
 
@@ -1433,6 +1495,18 @@ export default function PlaceDetailScreen({ navigation, route }) {
                             </Text>
                         </View>
                     </View>
+
+                    <PlaceInteractionBar
+                        liked={isLiked}
+                        disliked={isDisliked}
+                        saved={isSaved}
+                        onLike={handleLike}
+                        onDislike={handleDislike}
+                        onSave={handleSave}
+                        onShare={handleShare}
+                        onDirections={handleDirections}
+                        onNotInterested={handleNotInterested}
+                    />
                 </View>
 
                 {/* 3. Tab bar — idx 2 (sticky) */}
@@ -1506,67 +1580,48 @@ export default function PlaceDetailScreen({ navigation, route }) {
                     },
                 ]}
             >
-                {/* Dismiss (not interested) */}
+                {showPricing && priceLabelFooter ? (
+                    <View style={styles.priceWrapBottom}>
+                        <Text style={[styles.priceFrom, { color: palette.textMuted }]}>
+                            {place?.priceLevel
+                                ? `${getPriceTierLabel(place.priceLevel) || "Price"} · from`
+                                : "Est. from"}
+                        </Text>
+                        <Text style={[styles.priceValue, { color: palette.textPrimary }]}>
+                            {priceLabelFooter}
+                        </Text>
+                    </View>
+                ) : (
+                    <View style={styles.priceWrapBottom} />
+                )}
+
                 <Pressable
-                    onPress={handleDismiss}
-                    style={[
-                        styles.dismissBtn,
-                        {
-                            borderColor: palette.borderStrong,
-                            backgroundColor: isDark
-                                ? "rgba(20,42,70,0.8)"
-                                : "rgba(255,255,255,0.9)",
-                        },
-                    ]}
+                    onPress={handleDirections}
+                    style={styles.ctaBtnWrap}
                 >
-                    <Ionicons
-                        name="close-outline"
-                        size={18}
-                        color={palette.textMuted}
-                    />
+                    <LinearGradient
+                        colors={gradients.primaryButton}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.ctaBtn}
+                    >
+                        <Ionicons
+                            name="navigate"
+                            size={18}
+                            color={palette.iceWhite}
+                            style={{ marginRight: 6 }}
+                        />
+                        <Text style={styles.ctaBtnText}>Get directions</Text>
+                    </LinearGradient>
                 </Pressable>
 
-                {/* Price + CTA */}
-                <View style={styles.priceCtaGroup}>
-                    {showPricing && priceLabelFooter ? (
-                        <View style={styles.priceWrap}>
-                            <Text
-                                style={[styles.priceFrom, { color: palette.textMuted }]}
-                            >
-                                {place?.priceLevel
-                                    ? `${(getPriceTierLabel(place.priceLevel) || "Price")} · From`
-                                    : "Est. From"}
-                            </Text>
-                            <Text
-                                style={[
-                                    styles.priceValue,
-                                    { color: palette.textPrimary },
-                                ]}
-                            >
-                                {priceLabelFooter}
-                            </Text>
-                        </View>
-                    ) : null}
-
-                    <Pressable
-                        onPress={handleCta}
-                        style={[
-                            styles.ctaBtnWrap,
-                            !showPricing || !priceLabelFooter ? { flex: 1 } : null,
-                        ]}
-                    >
-                        <LinearGradient
-                            colors={gradients.primaryButton}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.ctaBtn}
-                        >
-                            <Text style={styles.ctaBtnText}>
-                                {getCtaLabel(place?.type ?? "")}
-                            </Text>
-                        </LinearGradient>
-                    </Pressable>
-                </View>
+                <Pressable
+                    onPress={handleBottomDismiss}
+                    hitSlop={8}
+                    style={styles.bottomDismissBtn}
+                >
+                    <Ionicons name="close" size={20} color={palette.textMuted} />
+                </Pressable>
             </View>
         </SafeAreaView>
     );
@@ -1893,21 +1948,23 @@ function createStyles(palette, isDark) {
             borderTopWidth: 1,
             flexDirection: "row",
             alignItems: "center",
-            gap: 12,
+            gap: 10,
         },
-        dismissBtn: {
-            width: 46,
-            height: 46,
+        priceWrapBottom: {
+            minWidth: 72,
+            gap: 1,
+        },
+        bottomDismissBtn: {
+            width: 44,
+            height: 44,
             borderRadius: 14,
-            borderWidth: 1,
             alignItems: "center",
             justifyContent: "center",
-        },
-        priceCtaGroup: {
-            flex: 1,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 12,
+            borderWidth: 1,
+            borderColor: palette.borderSoft,
+            backgroundColor: isDark
+                ? "rgba(20,42,70,0.8)"
+                : "rgba(255,255,255,0.9)",
         },
         priceWrap: {
             gap: 1,
@@ -2012,6 +2069,7 @@ function createStyles(palette, isDark) {
         ctaBtn: {
             height: 46,
             borderRadius: 14,
+            flexDirection: "row",
             alignItems: "center",
             justifyContent: "center",
             shadowColor: "#2EA9FF",

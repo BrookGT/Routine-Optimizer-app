@@ -1,26 +1,117 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Design tokens ──────────────────────────────────────────────────────── */
 :root {
-  --background: 245 246 248;
-  --surface: 255 255 255;
-  --surface-muted: 241 245 249;
-  --text: 15 23 42;
-  --text-muted: 100 116 139;
-  --brand: 37 99 235;
-  --brand-dark: 30 64 175;
-  --ring: 15 23 42;
+  --brand-from: #6366f1;
+  --brand-to:   #8b5cf6;
+  --brand-mid:  #7c3aed;
+  --sidebar-bg: #0f0f1a;
+  --sidebar-border: rgba(255,255,255,0.06);
 }
+
+/* ─── Base ───────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: rgb(var(--background));
-  color: rgb(var(--text));
-  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: #f8f8fc;
+  color: #0f172a;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-* {
-  box-sizing: border-box;
+/* ─── Scrollbar ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ─── Shared components ──────────────────────────────────────────────────── */
+.input-field {
+  @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800
+         placeholder-slate-400 shadow-sm transition
+         focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-300;
 }
+.input-field:disabled { @apply opacity-60 cursor-not-allowed; }
+
+/* Brand gradient utility */
+.brand-gradient { background: linear-gradient(135deg, var(--brand-from), var(--brand-to)); }
+.brand-gradient-text {
+  background: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Card glow on hover */
+.card-hover {
+  @apply transition-all duration-200;
+}
+.card-hover:hover {
+  box-shadow: 0 8px 30px rgba(99, 102, 241, 0.10), 0 2px 8px rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+
+/* Stat number */
+.stat-number {
+  @apply text-3xl font-bold tracking-tight text-slate-900;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Page heading */
+.page-title  { @apply text-2xl font-bold tracking-tight text-slate-900; }
+.page-sub    { @apply text-sm text-slate-500 mt-0.5; }
+
+/* Sidebar scrollbar override */
+.sidebar-scroll::-webkit-scrollbar { width: 3px; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
+
+/* Table row hover */
+.table-row { @apply transition-colors hover:bg-indigo-50/40; }
+
+/* Animated dot */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.dot-live {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* Line clamp */
+.line-clamp-1 { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+.line-clamp-2 { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.line-clamp-3 { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+
+/* Glass card */
+.glass {
+  background: rgba(255,255,255,0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.5);
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fadeIn 0.25s ease-out both; }
+
+/* Section enter */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.slide-up { animation: slideUp 0.3s ease-out both; }

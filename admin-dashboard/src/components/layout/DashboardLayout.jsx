@@ -8,41 +8,38 @@ export default function DashboardLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="flex h-screen overflow-hidden bg-[#f8f8fc]">
+      {/* Mobile overlay */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* Mobile drawer */}
       <div
         className={cn(
-          "fixed inset-0 z-40 md:hidden",
-          isSidebarOpen ? "pointer-events-auto" : "pointer-events-none"
+          "fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-300 ease-out md:hidden",
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div
-          className={cn(
-            "absolute inset-0 bg-slate-950/60 transition-opacity",
-            isSidebarOpen ? "opacity-100" : "opacity-0"
-          )}
-          onClick={() => setIsSidebarOpen(false)}
-          role="button"
-          tabIndex={-1}
-        />
-        <div
-          className={cn(
-            "absolute left-0 top-0 h-full w-64 bg-slate-950 shadow-xl transition-transform",
-            isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-          )}
-        >
-          <Sidebar onNavigate={() => setIsSidebarOpen(false)} showClose />
-        </div>
+        <Sidebar onNavigate={() => setIsSidebarOpen(false)} showClose />
       </div>
 
-      <div className="hidden md:fixed md:inset-y-0 md:z-30 md:block md:w-64">
+      {/* Desktop sidebar */}
+      <div className="hidden w-64 shrink-0 md:block">
         <Sidebar />
       </div>
 
-      <div className="flex min-h-screen flex-1 flex-col md:pl-64">
+      {/* Main */}
+      <div className="flex flex-1 flex-col overflow-hidden">
         <Topbar onOpenSidebar={() => setIsSidebarOpen(true)} />
-        <main className="flex-1 px-4 py-6 sm:px-6">
-          <div className="mx-auto w-full max-w-6xl">
-            <Outlet />
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-7xl px-6 py-7">
+            <div className="slide-up">
+              <Outlet />
+            </div>
           </div>
         </main>
       </div>

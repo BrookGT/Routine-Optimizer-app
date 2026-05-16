@@ -20,17 +20,25 @@ import { useAppTheme } from "../context/ThemeContext";
 const Stack = createNativeStackNavigator();
 
 /**
- * Legacy users: non-empty `interests` counts as onboarded.
- * New flow: weekly activities, meal prefs, and a numeric weekly budget must be set.
+ * Onboarding completion check.
+ *
+ * Legacy path (v1):  non-empty `interests` → skip re-onboarding for existing users.
+ * New flow   (v2):   `username` + weeklyActivities + mealPreferences + weeklyBudget.
+ *                    Username is required in the new onboarding (step 0).
  */
 function hasCompletedOnboarding(profile) {
+    // Legacy v1: non-empty interests = already onboarded
     if (Array.isArray(profile?.interests) && profile.interests.length > 0) {
         return true;
     }
+    // New v2+ flow
+    const un = profile?.username;
     const wa = profile?.weeklyActivities;
     const mp = profile?.mealPreferences;
     const wb = profile?.weeklyBudget;
     return (
+        typeof un === "string" &&
+        un.length >= 3 &&
         Array.isArray(wa) &&
         wa.length > 0 &&
         Array.isArray(mp) &&
