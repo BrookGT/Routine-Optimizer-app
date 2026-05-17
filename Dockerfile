@@ -2,6 +2,8 @@
 
 FROM python:3.11-slim-bookworm
 
+ARG NODE_VERSION=20.19.4
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     NODE_ENV=production \
@@ -14,18 +16,19 @@ RUN apt-get update \
         build-essential \
         ca-certificates \
         curl \
-        gnupg \
-        nodejs \
-        npm \
+        xz-utils \
+    && curl -fsSLO https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz \
+    && tar -xJf node-v${NODE_VERSION}-linux-x64.tar.xz -C /usr/local --strip-components=1 \
+    && rm -f node-v${NODE_VERSION}-linux-x64.tar.xz \
     && npm install -g serve@14.2.4 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . /app/
 
-RUN npm ci --prefix /app/backend --omit=dev \
-    && npm ci --prefix /app/admin-dashboard \
-    && npm ci --prefix /app/mobile \
-    && pip install --no-cache-dir -r /app/ai-service/requirements.txt
+RUN cd /app/backend && npm install --omit=dev --no-fund --no-audit
+RUN cd /app/admin-dashboard && NODE_ENV=development npm install --no-fund --no-audit
+RUN cd /app/mobile && NODE_ENV=development npm install --no-fund --no-audit
+RUN pip install --no-cache-dir -r /app/ai-service/requirements.txt
 
 RUN npm run build --prefix /app/admin-dashboard \
     && npx --prefix /app/mobile expo export --platform web
