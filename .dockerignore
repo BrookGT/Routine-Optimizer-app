@@ -1,0 +1,14 @@
+.git
+**/.git
+**/node_modules
+**/dist
+**/build
+**/.expo
+**/.cache
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.env
+**/.env.*
+**/.DS_Store
