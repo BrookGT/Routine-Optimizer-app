@@ -1,34 +1,34 @@
 # syntax=docker/dockerfile:1.7
 
-FROM python:3.11-slim-bookworm
+FROM node:20.19.4-bookworm-slim AS node
 
-ARG NODE_VERSION=20.19.4
+FROM python:3.11-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     NODE_ENV=production \
-    EXPO_NO_TELEMETRY=1
+    EXPO_NO_TELEMETRY=1 \
+    PATH=/usr/local/bin:$PATH \
+    PIP_DEFAULT_TIMEOUT=300 \
+    PIP_RETRIES=5
 
 WORKDIR /app
+
+COPY --from=node /usr/local /usr/local
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
-        curl \
-        xz-utils \
-    && curl -fsSLO https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz \
-    && tar -xJf node-v${NODE_VERSION}-linux-x64.tar.xz -C /usr/local --strip-components=1 \
-    && rm -f node-v${NODE_VERSION}-linux-x64.tar.xz \
     && npm install -g serve@14.2.4 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . /app/
 
 RUN cd /app/backend && npm install --omit=dev --no-fund --no-audit
-RUN cd /app/admin-dashboard && NODE_ENV=development npm install --no-fund --no-audit
-RUN cd /app/mobile && NODE_ENV=development npm install --no-fund --no-audit
-RUN pip install --no-cache-dir -r /app/ai-service/requirements.txt
+RUN cd /app/admin-dashboard && npm install --include=dev --no-fund --no-audit
+RUN cd /app/mobile && npm install --include=dev --no-fund --no-audit
+RUN pip install --no-cache-dir --timeout 300 --retries 5 -r /app/ai-service/requirements.txt
 
 RUN npm run build --prefix /app/admin-dashboard \
     && npx --prefix /app/mobile expo export --platform web
