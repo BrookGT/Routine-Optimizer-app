@@ -1,13 +1,14 @@
 # syntax=docker/dockerfile:1.7
+# Silver repo image: Node backend + Python AI service + admin deps.
+# PyTorch is installed via pip (official CPU wheel); pytorch/pytorch has no 2.3.1-cpu tag.
 
 FROM node:20.19.4-bookworm-slim AS node
 
-FROM python:3.11-slim-bookworm
+FROM python:3.12.8-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     NODE_ENV=production \
-    EXPO_NO_TELEMETRY=1 \
     PATH=/usr/local/bin:$PATH \
     PIP_DEFAULT_TIMEOUT=300 \
     PIP_RETRIES=5
@@ -20,18 +21,14 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
-    && npm install -g serve@14.2.4 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . /app/
 
-RUN cd /app/backend && npm install --omit=dev --no-fund --no-audit
-RUN cd /app/admin-dashboard && npm install --include=dev --no-fund --no-audit
-RUN cd /app/mobile && npm install --include=dev --no-fund --no-audit
-RUN pip install --no-cache-dir --timeout 300 --retries 5 -r /app/ai-service/requirements.txt
-
-RUN npm run build --prefix /app/admin-dashboard \
-    && npx --prefix /app/mobile expo export --platform web
+RUN cd /app/backend && npm ci --omit=dev --no-fund --no-audit \
+    && cd /app/admin-dashboard && npm ci --no-fund --no-audit \
+    && pip install --no-cache-dir --timeout 300 --retries 5 \
+        -r /app/ai-service/requirements.txt
 
 RUN mkdir -p /app/ai-service/data \
     && cat <<'EOF' > /usr/local/bin/wuloye-entrypoint.sh
@@ -43,23 +40,14 @@ case "${SERVICE:-}" in
         exec node /app/backend/src/server.js
         ;;
     ai-service)
-        exec python /app/ai-service/main.py
+        cd /app/ai-service
+        exec uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
         ;;
     admin)
-        exec serve -s /app/admin-dashboard/dist -l 3000
-        ;;
-    mobile)
-        exec serve -s /app/mobile/dist -l 19006
-        ;;
-    all)
-        node /app/backend/src/server.js &
-        python /app/ai-service/main.py &
-        serve -s /app/admin-dashboard/dist -l 3000 &
-        serve -s /app/mobile/dist -l 19006 &
-        wait
+        exec npm run dev --prefix /app/admin-dashboard -- --host 0.0.0.0 --port 3000
         ;;
     *)
-        echo "Set SERVICE=backend|ai-service|admin|mobile|all"
+        echo "Set SERVICE=backend|ai-service|admin"
         exit 1
         ;;
 esac
@@ -67,6 +55,6 @@ EOF
 
 RUN chmod +x /usr/local/bin/wuloye-entrypoint.sh
 
-EXPOSE 3000 5000 8000 19006
+EXPOSE 3000 5000 8000
 
 ENTRYPOINT ["/usr/local/bin/wuloye-entrypoint.sh"]
