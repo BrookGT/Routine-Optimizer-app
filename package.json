@@ -1,11 +1,11 @@
 {
-  "name": "wuloye",
-  "private": true,
-  "description": "Wuloye monorepo — backend, AI service, admin, mobile",
-  "scripts": {
-    "test": "npm test --prefix backend",
-    "test:backend": "npm test --prefix backend",
-    "test:ai": "cd ai-service && python -m pytest",
-    "test:all": "npm test --prefix backend && cd ai-service && python -m pytest"
-  }
+    "name": "routine-optimizer-app",
+    "private": true,
+    "description": "Routine Optimizer app monorepo — backend, AI service, admin, mobile",
+    "scripts": {
+        "test": "npm test --prefix backend",
+        "test:backend": "npm test --prefix backend",
+        "test:ai": "cd ai-service && python -m pytest",
+        "test:all": "npm test --prefix backend && cd ai-service && python -m pytest"
+    }
 }

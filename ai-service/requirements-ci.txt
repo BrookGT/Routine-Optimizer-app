@@ -1,0 +1,6 @@
+# Minimal runtime deps for pytest in CI (no torch — keeps workflow fast).
+python-dotenv==1.0.1
+requests==2.32.3
+beautifulsoup4==4.12.3
+lxml==5.2.2
+numpy==1.26.4

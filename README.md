@@ -1,4 +1,4 @@
-# Wuloye
+# Routine Optimizer app
 
 A production-ready monorepo built with a clean-architecture backend, a Python AI microservice, a React Native mobile app, and a Next.js admin dashboard.
 
@@ -7,7 +7,7 @@ A production-ready monorepo built with a clean-architecture backend, a Python AI
 ## Project Structure
 
 ```
-wuloye/
+routine-optimizer-app/
 ├── backend/          Node.js + Express API (ES Modules, Firebase)
 ├── ai-service/       Python FastAPI microservice
 ├── mobile/           React Native (Expo) — Sprint 2
@@ -29,10 +29,10 @@ cp backend/.env.example backend/.env
 docker-compose up --build
 ```
 
-| Service       | URL                        |
-|---------------|----------------------------|
-| Backend API   | http://localhost:5000       |
-| AI Service    | http://localhost:8000       |
+| Service     | URL                   |
+| ----------- | --------------------- |
+| Backend API | http://localhost:5000 |
+| AI Service  | http://localhost:8000 |
 
 ---
 
@@ -75,10 +75,10 @@ See `backend/.env.example` for all required variables.
 
 ## Sprint Plan
 
-| Sprint | Focus                          |
-|--------|--------------------------------|
-| 1      | Infrastructure & foundation    |
-| 2      | Auth, user management          |
-| 3      | Core business features         |
-| 4      | AI integration                 |
-| 5      | Mobile & admin dashboard       |
+| Sprint | Focus                       |
+| ------ | --------------------------- |
+| 1      | Infrastructure & foundation |
+| 2      | Auth, user management       |
+| 3      | Core business features      |
+| 4      | AI integration              |
+| 5      | Mobile & admin dashboard    |
